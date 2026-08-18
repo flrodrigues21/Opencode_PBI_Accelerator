@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Vendor (clone do repositorio Microsoft, re-criado pelo instalador)
+vendor/
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Power BI Desktop
+*.pbix
+*.pbit
+screenshots/
+
+# Backups
+*.backup-*/
+
+# Logs
+*.log
