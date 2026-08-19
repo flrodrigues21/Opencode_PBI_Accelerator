@@ -244,10 +244,10 @@ To install in a custom directory:
 ```
 
 **What the installation does:**
-1. Clones the official [microsoft/skills-for-fabric](https://github.com/microsoft/skills-for-fabric) repository and pins to the approved commit
+1. Clones the official [microsoft/skills-for-fabric](https://github.com/microsoft/skills-for-fabric) repository and pins to the approved commit (`ac156d284ab8e51f121af3f42303ea79c88cdab5`)
 2. Copies Power BI skills to `skills/`
 3. Copies common files to `common/` (referenced by skills)
-4. Installs `powerbi-report-author` and `powerbi-desktop` CLIs locally via npm (versions pinned to 0.1.1)
+4. Installs `powerbi-report-author` and `powerbi-desktop` CLIs locally via npm (versions pinned to `0.1.1`)
 5. Creates `AGENTS.md` templates and bootstrap scripts
 
 ### Step 3: Prepare a PBIP project
