@@ -1,16 +1,18 @@
 # Power BI + OpenCode Accelerator (local)
 
-Acelerador local e offline para desenvolvimento Power BI usando o formato PBIP com o assistente de IA OpenCode.
+Acelerador local para desenvolvimento Power BI usando o formato PBIP com o assistente de IA OpenCode.
 
-> **Nota sobre offline:** Para funcionar 100% offline, voce precisa de um modelo LLM local (ex: [Ollama](https://ollama.com) rodando `deepseek-r1`, `llama3`, etc.). Se nao tiver um modelo local, precisara de conexao com a internet para usar modelos em nuvem (Claude, GPT, Gemini, etc.).
+> **Projeto independente e nao oficial.** Nao e desenvolvido, patrocinado, endossado ou afiliado a equipe do OpenCode, a Anomaly ou a Microsoft. OpenCode, Power BI, Fabric e Microsoft sao marcas de seus respectivos titulares.
+
+> **Nota sobre offline:** A instalacao inicial e as atualizacoes requerem conexao com a internet. Apos a instalacao, o fluxo de trabalho pode operar localmente quando configurado com uma LLM local (ex: [Ollama](https://ollama.com) rodando `deepseek-r1`, `llama3`, etc.). Caso contrario, o OpenCode precisara de conexao com a internet para acessar modelos em nuvem (Claude, GPT, Gemini, etc.). Qualquer modelo em nuvem podera receber metadados e trechos dos projetos PBIP conforme a configuracao escolhida pelo usuario.
 
 ---
 
 ## 1. O que e OpenCode
 
-[OpenCode](https://opencode.ai) e um **assistente de codificacao com IA de codigo aberto** que roda no terminal. Criado pela [Anomaly](https://github.com/anomalyco/opencode), ele conecta a mais de 75 provedores de modelos (Claude, GPT, Gemini, Ollama local, etc.) e fornece edicao de arquivos, geracao de codigo, acesso a shell e compreensao de projeto atraves de uma unica interface TUI (Terminal User Interface).
+[OpenCode](https://opencode.ai) e um **assistente de codificacao com IA de codigo aberto** que roda no terminal. Criado pela [Anomaly](https://github.com/anomalyco/opencode), ele conecta a mais de 75 provedores de modelos (Claude, GPT, Gemini, Ollama, etc.) e fornece edicao de arquivos, geracao de codigo, acesso a shell e compreensao de projeto atraves de uma unica interface TUI (Terminal User Interface).
 
-Diferente de wrappers de chat, o OpenCode e um **agent harness completo** ??? com loop de ferramentas, integracao LSP, gerenciamento de sessoes, e modos Plan/Build. Ele roda no terminal, onde pode inspecionar repositorios, editar arquivos, chamar ferramentas e executar fluxos de trabalho agentic repetiveis.
+Diferente de wrappers de chat, o OpenCode e um **agent harness completo** -- com loop de ferramentas, integracao LSP, gerenciamento de sessoes, e modos Plan/Build. Ele roda no terminal, onde pode inspecionar repositorios, editar arquivos, chamar ferramentas e executar fluxos de trabalho agentic repetiveis.
 
 **Recursos principais:**
 - Suporte a 75+ provedores de LLM (incluindo modelos locais via Ollama)
@@ -30,7 +32,7 @@ Diferente de wrappers de chat, o OpenCode e um **agent harness completo** ??? co
 
 ## 2. O que e MCP
 
-**MCP (Model Context Protocol)** e um padrao open-source para conectar aplicacoes de IA a sistemas externos. Criado pela Anthropic, ele funciona como uma **porta USB-C para aplicacoes de IA** ??? fornecendo uma maneira padronizada de conectar assistentes de IA a fontes de dados, ferramentas e workflows.
+**MCP (Model Context Protocol)** e um padrao open-source para conectar aplicacoes de IA a sistemas externos. Criado pela Anthropic, ele funciona como uma **porta USB-C para aplicacoes de IA** -- fornecendo uma maneira padronizada de conectar assistentes de IA a fontes de dados, ferramentas e workflows.
 
 Com o MCP, ferramentas como OpenCode, Claude Desktop, ChatGPT e VS Code Copilot podem:
 - Acessar fontes de dados (arquivos locais, bancos de dados)
@@ -95,7 +97,7 @@ O BPA e utilizado tanto pelo **Tabular Editor 2** (gratuito) quanto pelo **Tabul
 
 ## 4. O que este projeto pode fazer
 
-Este acelerador combina OpenCode + Skills de IA + BPA + CLIs locais para oferecer um fluxo de trabalho completo de desenvolvimento Power BI **100% local e offline**.
+Este acelerador combina OpenCode + Skills de IA + BPA + CLIs locais para oferecer um fluxo de trabalho completo de desenvolvimento Power BI. Apos a instalacao e configuracao com uma LLM local, pode operar inteiramente offline.
 
 ### 4.1 Criar e editar relatorios Power BI (Dashboards)
 
@@ -224,6 +226,7 @@ Verificar no Desktop (powerbi-desktop screenshot)
 | OpenCode | Instalado e configurado | https://opencode.ai/docs |
 | Power BI Desktop | Para bridge/screenshot/reload (opcional) | https://powerbi.microsoft.com/desktop/ |
 | Tabular Editor 2 ou 3 | Para BPA (recomendado) | https://tabulareditor.com |
+| Ollama (ou outro LLM local) | Para uso offline | https://ollama.com |
 
 ### Passo 2: Instalar o acelerador
 
@@ -235,8 +238,13 @@ cd C:\caminho\para\o\repositorio
 .\Install-PowerBI-OpenCodeAccelerator.ps1
 ```
 
-Para instalar em um diretorio customizado:
+Ou, para seguir as recomendacoes de seguranca:
+```powershell
+Unblock-File .\Install-PowerBI-OpenCodeAccelerator.ps1
+.\Install-PowerBI-OpenCodeAccelerator.ps1
+```
 
+Para instalar em um diretorio customizado:
 ```powershell
 .\Install-PowerBI-OpenCodeAccelerator.ps1 -InstallRoot "D:\MeuCaminho\PowerBI-Accelerator"
 ```
@@ -244,7 +252,7 @@ Para instalar em um diretorio customizado:
 **O que a instalacao faz:**
 1. Clona o repositorio oficial [microsoft/skills-for-fabric](https://github.com/microsoft/skills-for-fabric)
 2. Copia as skills Power BI para `skills/`
-3. Instala as CLIs `powerbi-report-author` e `powerbi-desktop` localmente via npm
+3. Instala as CLIs `powerbi-report-author` e `powerbi-desktop` localmente via npm (versoes fixadas)
 4. Cria os templates de `AGENTS.md` e scripts de bootstrap
 
 ### Passo 3: Preparar um projeto PBIP
@@ -256,10 +264,10 @@ Entre na pasta de qualquer projeto Power BI PBIP e execute:
 ```
 
 **O que acontece na primeira vez:**
-- `.opencode/skills` ??? Junction (atalho) para as skills compartilhadas
-- `AGENTS.md` ??? Regras do projeto para o assistente de IA
-- `Abrir-PowerBI-OpenCode.ps1` ??? Script de inicializacao
-- `Abrir-PowerBI-OpenCode.cmd` ??? Atalho clicavel (duplo clique)
+- `.opencode/skills` -- Junction (atalho) para as skills compartilhadas
+- `AGENTS.md` -- Regras do projeto para o assistente de IA
+- `Abrir-PowerBI-OpenCode.ps1` -- Script de inicializacao
+- `Abrir-PowerBI-OpenCode.cmd` -- Atalho clicavel (duplo clique)
 
 ### Passo 4: Abrir o projeto
 
@@ -329,43 +337,60 @@ powerbi-desktop status
 | `powerbi-report-management` | Gerenciamento de versao e operacoes | [GitHub](https://github.com/microsoft/skills-for-fabric/tree/main/plugins/powerbi-authoring/skills) |
 | `semantic-model-authoring` | Modelagem de dados, DAX, TMDL e naming conventions | [Microsoft Learn](https://learn.microsoft.com/en-us/power-bi/developer/agentic/semantic-model-authoring-skill-overview) |
 | `rode-o-bpa` | Best Practice Analyzer com regras oficiais da Microsoft | [Tabular Editor Docs](https://docs.tabulareditor.com/features/using-bpa.html) |
-| `check-updates` | Verificacao de atualizacoes do repositorio | ??? |
+| `check-updates` | Verificacao de atualizacoes do repositorio | -- |
 
 ---
 
-## Referencias completas
+## Atribuicoes e Licencas
 
-### Microsoft Power BI
+Este projeto usa licenca [MIT](LICENSE). Alem disso, inclui componentes de terceiros detalhados em [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+### Detalhes de atribuicao
+
+| Componente | Fonte | Copyright | Licenca |
+|---|---|---|---|
+| Skills Power BI | [microsoft/skills-for-fabric](https://github.com/microsoft/skills-for-fabric) | (c) 2026 Microsoft Corporation | MIT ([copia](third-party/microsoft-skills-for-fabric-LICENSE.txt)) |
+| BPA Rules | [microsoft/Analysis-Services](https://github.com/microsoft/Analysis-Services) | (c) 2016 Microsoft | MIT ([copia](third-party/microsoft-analysis-services-LICENSE.txt)) |
+| OpenCode | [anomalyco/opencode](https://github.com/anomalyco/opencode) | Anomaly | MIT |
+| CLIs npm | [@microsoft/powerbi-report-authoring-cli](https://www.npmjs.com/package/@microsoft/powerbi-report-authoring-cli), [@microsoft/powerbi-desktop-bridge-cli](https://www.npmjs.com/package/@microsoft/powerbi-desktop-bridge-cli) | Microsoft | MIT |
+
+### Referencias completas
+
+#### Microsoft Power BI
 - Power BI Desktop: https://powerbi.microsoft.com
 - PBIP Documentation: https://learn.microsoft.com/en-us/power-bi/developer/projects/projects-overview
 - PBIP Semantic Model: https://learn.microsoft.com/en-us/power-bi/developer/projects/projects-dataset
 - PBIP Report: https://learn.microsoft.com/en-us/power-bi/developer/projects/projects-report
 - Power BI Agentic Overview: https://learn.microsoft.com/en-us/power-bi/developer/agentic/power-bi-agentic-overview
 
-### Microsoft Fabric e Skills
+#### Microsoft Fabric e Skills
 - Skills for Fabric: https://github.com/microsoft/skills-for-fabric
 - Install Skills for Fabric: https://learn.microsoft.com/en-us/fabric/fundamentals/skills-for-fabric-install
 - Power BI Authoring Plugin: https://github.com/microsoft/skills-for-fabric/tree/main/plugins/powerbi-authoring
 
-### Model Context Protocol
+#### Model Context Protocol
 - MCP Site: https://modelcontextprotocol.io
 - MCP GitHub: https://github.com/modelcontextprotocol/modelcontextprotocol
 - MCP Introduction: https://modelcontextprotocol.io/introduction
 
-### Tabular Editor e BPA
+#### Tabular Editor e BPA
 - Tabular Editor: https://tabulareditor.com
 - BPA Documentation: https://docs.tabulareditor.com/features/using-bpa.html
 - BPA Rules (Tabular Editor): https://github.com/TabularEditor/BestPracticeRules
 - BPA Rules (Microsoft): https://github.com/microsoft/Analysis-Services/tree/master/BestPracticeRules
 - BPA Blog Post: https://tabulareditor.com/blog/best-practice-analyzer-bpa-rules-for-semantic-models
 
-### Comunidade e Artigos
+#### Comunidade e Artigos
 - SQLBI Best Practices: https://www.sqlbi.com/articles/
 - PBIR Format Guide: https://lukasreese.com/2026/03/16/what-is-pbir-full-guide-to-power-bi-enhanced-report-format/
 - PBIP + Git + CI/CD: https://powerbiconsulting.com/blog/power-bi-project-format-pbip-git-ci-cd
 - Power BI Semantic Model Optimization: https://powerbiconsulting.com/blog/power-bi-semantic-model-optimization-complete-guide-2026
 
 ---
+
+## Seguranca
+
+Para reportar vulnerabilidades, veja [SECURITY.md](SECURITY.md).
 
 ## Licenca
 
