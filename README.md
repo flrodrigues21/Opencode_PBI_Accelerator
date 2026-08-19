@@ -2,13 +2,15 @@
 
 Acelerador local e offline para desenvolvimento Power BI usando o formato PBIP com o assistente de IA OpenCode.
 
+> **Nota sobre offline:** Para funcionar 100% offline, voce precisa de um modelo LLM local (ex: [Ollama](https://ollama.com) rodando `deepseek-r1`, `llama3`, etc.). Se nao tiver um modelo local, precisara de conexao com a internet para usar modelos em nuvem (Claude, GPT, Gemini, etc.).
+
 ---
 
 ## 1. O que e OpenCode
 
 [OpenCode](https://opencode.ai) e um **assistente de codificacao com IA de codigo aberto** que roda no terminal. Criado pela [Anomaly](https://github.com/anomalyco/opencode), ele conecta a mais de 75 provedores de modelos (Claude, GPT, Gemini, Ollama local, etc.) e fornece edicao de arquivos, geracao de codigo, acesso a shell e compreensao de projeto atraves de uma unica interface TUI (Terminal User Interface).
 
-Diferente de wrappers de chat, o OpenCode e um **agent harness completo** — com loop de ferramentas, integracao LSP, gerenciamento de sessoes, e modos Plan/Build. Ele roda no terminal, onde pode inspecionar repositorios, editar arquivos, chamar ferramentas e executar fluxos de trabalho agentic repetiveis.
+Diferente de wrappers de chat, o OpenCode e um **agent harness completo** ??? com loop de ferramentas, integracao LSP, gerenciamento de sessoes, e modos Plan/Build. Ele roda no terminal, onde pode inspecionar repositorios, editar arquivos, chamar ferramentas e executar fluxos de trabalho agentic repetiveis.
 
 **Recursos principais:**
 - Suporte a 75+ provedores de LLM (incluindo modelos locais via Ollama)
@@ -28,7 +30,7 @@ Diferente de wrappers de chat, o OpenCode e um **agent harness completo** — co
 
 ## 2. O que e MCP
 
-**MCP (Model Context Protocol)** e um padrao open-source para conectar aplicacoes de IA a sistemas externos. Criado pela Anthropic, ele funciona como uma **porta USB-C para aplicacoes de IA** — fornecendo uma maneira padronizada de conectar assistentes de IA a fontes de dados, ferramentas e workflows.
+**MCP (Model Context Protocol)** e um padrao open-source para conectar aplicacoes de IA a sistemas externos. Criado pela Anthropic, ele funciona como uma **porta USB-C para aplicacoes de IA** ??? fornecendo uma maneira padronizada de conectar assistentes de IA a fontes de dados, ferramentas e workflows.
 
 Com o MCP, ferramentas como OpenCode, Claude Desktop, ChatGPT e VS Code Copilot podem:
 - Acessar fontes de dados (arquivos locais, bancos de dados)
@@ -43,7 +45,7 @@ Com o MCP, ferramentas como OpenCode, Claude Desktop, ChatGPT e VS Code Copilot 
 
 ### 2.1 Quais MCPs este projeto utiliza
 
-Este acelerador trabalha com MCPs da Microsoft para Power BI. Embora o foco seja **local/offline**, os MCPs complementam o fluxo de trabalho:
+Este acelerador trabalha com MCPs da Microsoft para Power BI. O foco e **local**, mas para funcionar offline voce precisa ter um modelo LLM local (ex: via [Ollama](https://ollama.com)). Caso contrario, o OpenCode precisara de conexao com a internet para acessar modelos em nuvem.
 
 | MCP Server | Descricao | Uso no projeto |
 |---|---|---|
@@ -254,10 +256,10 @@ Entre na pasta de qualquer projeto Power BI PBIP e execute:
 ```
 
 **O que acontece na primeira vez:**
-- `.opencode/skills` — Junction (atalho) para as skills compartilhadas
-- `AGENTS.md` — Regras do projeto para o assistente de IA
-- `Abrir-PowerBI-OpenCode.ps1` — Script de inicializacao
-- `Abrir-PowerBI-OpenCode.cmd` — Atalho clicavel (duplo clique)
+- `.opencode/skills` ??? Junction (atalho) para as skills compartilhadas
+- `AGENTS.md` ??? Regras do projeto para o assistente de IA
+- `Abrir-PowerBI-OpenCode.ps1` ??? Script de inicializacao
+- `Abrir-PowerBI-OpenCode.cmd` ??? Atalho clicavel (duplo clique)
 
 ### Passo 4: Abrir o projeto
 
@@ -327,7 +329,7 @@ powerbi-desktop status
 | `powerbi-report-management` | Gerenciamento de versao e operacoes | [GitHub](https://github.com/microsoft/skills-for-fabric/tree/main/plugins/powerbi-authoring/skills) |
 | `semantic-model-authoring` | Modelagem de dados, DAX, TMDL e naming conventions | [Microsoft Learn](https://learn.microsoft.com/en-us/power-bi/developer/agentic/semantic-model-authoring-skill-overview) |
 | `rode-o-bpa` | Best Practice Analyzer com regras oficiais da Microsoft | [Tabular Editor Docs](https://docs.tabulareditor.com/features/using-bpa.html) |
-| `check-updates` | Verificacao de atualizacoes do repositorio | — |
+| `check-updates` | Verificacao de atualizacoes do repositorio | ??? |
 
 ---
 
@@ -368,3 +370,4 @@ powerbi-desktop status
 ## Licenca
 
 [MIT](LICENSE)
+
