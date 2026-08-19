@@ -10,7 +10,7 @@ Acelerador local para desenvolvimento Power BI usando o formato PBIP com o assis
 
 ## 1. O que e OpenCode
 
-[OpenCode](https://opencode.ai) e um **assistente de codificacao com IA de codigo aberto** que roda no terminal. Criado pela [Anomaly](https://github.com/anomalyco/opencode), ele conecta a mais de 75 provedores de modelos (Claude, GPT, Gemini, Ollama, etc.) e fornece edicao de arquivos, geracao de codigo, acesso a shell e compreensao de projeto atraves de uma unica interface TUI (Terminal User Interface).
+[OpenCode](https://opencode.ai) e um **assistente de codificacao com IA de codigo aberto** que roda no terminal. Criado pela [Anomaly](https://github.com/anomalyco/opencode), ele conecta a mais de 75 provedores de modelos (Claude, GPT, Gemini, Ollama local, etc.) e fornece edicao de arquivos, geracao de codigo, acesso a shell e compreensao de projeto atraves de uma unica interface TUI (Terminal User Interface).
 
 Diferente de wrappers de chat, o OpenCode e um **agent harness completo** -- com loop de ferramentas, integracao LSP, gerenciamento de sessoes, e modos Plan/Build. Ele roda no terminal, onde pode inspecionar repositorios, editar arquivos, chamar ferramentas e executar fluxos de trabalho agentic repetiveis.
 
@@ -238,22 +238,18 @@ cd C:\caminho\para\o\repositorio
 .\Install-PowerBI-OpenCodeAccelerator.ps1
 ```
 
-Ou, para seguir as recomendacoes de seguranca:
-```powershell
-Unblock-File .\Install-PowerBI-OpenCodeAccelerator.ps1
-.\Install-PowerBI-OpenCodeAccelerator.ps1
-```
-
 Para instalar em um diretorio customizado:
+
 ```powershell
 .\Install-PowerBI-OpenCodeAccelerator.ps1 -InstallRoot "D:\MeuCaminho\PowerBI-Accelerator"
 ```
 
 **O que a instalacao faz:**
-1. Clona o repositorio oficial [microsoft/skills-for-fabric](https://github.com/microsoft/skills-for-fabric)
+1. Clona o repositorio oficial [microsoft/skills-for-fabric](https://github.com/microsoft/skills-for-fabric) e fixa no commit homologado
 2. Copia as skills Power BI para `skills/`
-3. Instala as CLIs `powerbi-report-author` e `powerbi-desktop` localmente via npm (versoes fixadas)
-4. Cria os templates de `AGENTS.md` e scripts de bootstrap
+3. Copia os arquivos comuns para `common/` (referenciados pelas skills)
+4. Instala as CLIs `powerbi-report-author` e `powerbi-desktop` localmente via npm (versoes fixadas em 0.1.1)
+5. Cria os templates de `AGENTS.md` e scripts de bootstrap
 
 ### Passo 3: Preparar um projeto PBIP
 
@@ -265,6 +261,7 @@ Entre na pasta de qualquer projeto Power BI PBIP e execute:
 
 **O que acontece na primeira vez:**
 - `.opencode/skills` -- Junction (atalho) para as skills compartilhadas
+- `.opencode/common` -- Junction (atalho) para os arquivos comuns
 - `AGENTS.md` -- Regras do projeto para o assistente de IA
 - `Abrir-PowerBI-OpenCode.ps1` -- Script de inicializacao
 - `Abrir-PowerBI-OpenCode.cmd` -- Atalho clicavel (duplo clique)
@@ -279,7 +276,7 @@ Depois da preparacao, basta dar **duplo clique** em `Abrir-PowerBI-OpenCode.cmd`
 
 Isso vai:
 1. Adicionar as CLIs ao PATH da sessao
-2. Criar a junction de skills
+2. Criar as junctions de skills e common
 3. Preparar o AGENTS.md
 4. Abrir o OpenCode na pasta do projeto
 
@@ -387,10 +384,6 @@ Este projeto usa licenca [MIT](LICENSE). Alem disso, inclui componentes de terce
 - Power BI Semantic Model Optimization: https://powerbiconsulting.com/blog/power-bi-semantic-model-optimization-complete-guide-2026
 
 ---
-
-## Seguranca
-
-Para reportar vulnerabilidades, veja [SECURITY.md](SECURITY.md).
 
 ## Licenca
 
