@@ -9,28 +9,27 @@ Instala UMA VEZ no servidor:
 - Power BI Desktop Bridge CLI
 - Scripts de atalho para preparar/abrir qualquer projeto PBIP no OpenCode
 
-Nao configura Power BI Service, Fabric, publicacao, tenant, OAuth, App Registration
-ou Power BI Remote MCP. O objetivo e trabalhar localmente/offline com PBIP/PBIR.
+Não configura Power BI Service, Fabric, publicação, tenant, OAuth, App Registration
+ou Power BI Remote MCP. O objetivo é trabalhar localmente/offline com PBIP/PBIR.
 
 A cada projeto, use:
   C:\OpenCode\PowerBI-Accelerator\bin\Start-PowerBI-OpenCode.ps1 -ProjectPath .
 
 O script cria dentro do projeto:
 - .opencode\skills  -> junction para as skills compartilhadas
-- .opencode\common  -> junction para os arquivos comuns
 - AGENTS.md          -> regras locais do projeto
 - Abrir-PowerBI-OpenCode.ps1
-- Abrir-PowerBI-OpenCode.cmd  -> atalho clicavel
+- Abrir-PowerBI-OpenCode.cmd  -> atalho clicável
 
 .PARAMETER InstallRoot
-Pasta comum no servidor onde ficarao skills, CLIs npm e scripts.
-Padrao: C:\OpenCode\PowerBI-Accelerator
+Pasta comum no servidor onde ficarão skills, CLIs npm e scripts.
+Padrão: C:\OpenCode\PowerBI-Accelerator
 
 .PARAMETER Force
-Restaura a versao homologada do repositorio Microsoft e recria arquivos de atalho/regra.
+Atualiza o clone Git e restaura arquivos de atalho/regra quando necessário.
 
 .PARAMETER SkipNpmInstall
-Pula a instalacao local das CLIs Power BI, util para testes.
+Pula a instalação local das CLIs Power BI, útil para testes.
 
 .EXAMPLE
 Set-ExecutionPolicy -Scope Process Bypass
@@ -40,15 +39,15 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\Install-PowerBI-OpenCodeAccelerator.ps1 -InstallRoot "D:\Ferramentas\PowerBI-Accelerator" -Force
 
 .NOTES
-Pre-requisitos:
+Pré-requisitos:
 - Git
 - Node.js 20 ou superior
 - OpenCode
 - Power BI Desktop (para bridge/screenshot/reload)
 
-As CLIs sao instaladas LOCALMENTE em:
+As CLIs são instaladas LOCALMENTE em:
   <InstallRoot>\node\node_modules\.bin
-Nenhuma instalacao npm global e feita.
+Nenhuma instalação npm global é feita.
 #>
 
 [CmdletBinding()]
@@ -63,11 +62,9 @@ $ErrorActionPreference = "Stop"
 
 $InstallRoot = [IO.Path]::GetFullPath($InstallRoot)
 $RepoUrl = "https://github.com/microsoft/skills-for-fabric.git"
-$PinnedCommit = "ac156d284ab8e51f121af3f42303ea79c88cdab5"
 $RepoRoot = Join-Path $InstallRoot "vendor\skills-for-fabric"
 $PluginSourceRelative = "plugins\powerbi-authoring"
 $SharedSkillsRoot = Join-Path $InstallRoot "skills"
-$SharedCommonRoot = Join-Path $InstallRoot "common"
 $NodeLocalRoot = Join-Path $InstallRoot "node"
 $BinRoot = Join-Path $InstallRoot "bin"
 $TemplateRoot = Join-Path $InstallRoot "templates"
@@ -84,7 +81,7 @@ function Ensure-Dir([string]$Path) {
 
 function Assert-Command([string]$Name, [string]$Hint) {
     if ($null -eq (Get-Command $Name -ErrorAction SilentlyContinue)) {
-        throw "Comando '$Name' nao encontrado. $Hint"
+        throw "Comando '$Name' não encontrado. $Hint"
     }
     $version = try { (& $Name --version 2>&1 | Select-Object -First 1 | Out-String).Trim() } catch { "" }
     Write-Ok "$Name encontrado $version"
@@ -93,8 +90,8 @@ function Assert-Command([string]$Name, [string]$Hint) {
 function Assert-Node20 {
     Assert-Command "node" "Instale Node.js LTS 20+. Em servidor sem winget, use o instalador MSI oficial."
     $v = (& node --version).Trim()
-    if ($v -notmatch '^v(\d+)\.') { throw "Versao de Node invalida: $v" }
-    if ([int]$Matches[1] -lt 20) { throw "E necessario Node.js 20+. Detectado: $v" }
+    if ($v -notmatch '^v(\d+)\.') { throw "Versão de Node inválida: $v" }
+    if ([int]$Matches[1] -lt 20) { throw "É necessário Node.js 20+. Detectado: $v" }
     Assert-Command "npm" "npm deve vir com o Node.js LTS."
 }
 
@@ -109,9 +106,9 @@ function Write-FileUtf8NoBom([string]$Path, [string]$Content, [switch]$Overwrite
 }
 
 # ---------------------------------------------------------------------------
-# Validacao e estrutura central
+# Validação e estrutura central
 # ---------------------------------------------------------------------------
-Write-Step "Validando pre-requisitos"
+Write-Step "Validando pré-requisitos"
 Assert-Command "git" "Instale Git for Windows."
 Assert-Node20
 Assert-Command "opencode" "Instale/configure o OpenCode antes de continuar."
@@ -119,15 +116,14 @@ Assert-Command "opencode" "Instale/configure o OpenCode antes de continuar."
 Write-Step "Criando estrutura compartilhada"
 Ensure-Dir $InstallRoot
 Ensure-Dir $SharedSkillsRoot
-Ensure-Dir $SharedCommonRoot
 Ensure-Dir $NodeLocalRoot
 Ensure-Dir $BinRoot
 Ensure-Dir $TemplateRoot
 
 # ---------------------------------------------------------------------------
-# Clone/atualizacao do repositorio Microsoft (versao homologada)
+# Clone/atualização do repositorio Microsoft
 # ---------------------------------------------------------------------------
-Write-Step "Obtendo Microsoft skills-for-fabric (commit $PinnedCommit)"
+Write-Step "Obtendo Microsoft skills-for-fabric"
 Ensure-Dir (Split-Path -Parent $RepoRoot)
 
 if (-not (Test-Path -LiteralPath (Join-Path $RepoRoot ".git"))) {
@@ -137,58 +133,36 @@ if (-not (Test-Path -LiteralPath (Join-Path $RepoRoot ".git"))) {
         Write-WarnMsg "Pasta anterior preservada em: $backup"
     }
 
-    & git clone $RepoUrl $RepoRoot
+    & git clone --depth 1 $RepoUrl $RepoRoot
     if ($LASTEXITCODE -ne 0) { throw "Falha ao clonar $RepoUrl" }
-
-    Push-Location $RepoRoot
-    try {
-        & git checkout $PinnedCommit
-        if ($LASTEXITCODE -ne 0) { throw "Falha ao fazer checkout do commit $PinnedCommit" }
-    }
-    finally { Pop-Location }
-
-    $currentHead = (& git -C $RepoRoot rev-parse HEAD).Trim()
-    if ($currentHead -ne $PinnedCommit) {
-        throw "Commit invalido apos checkout. Esperado: $PinnedCommit, Obtido: $currentHead"
-    }
-    Write-Ok "Repositorio oficial clonado e fixado no commit $PinnedCommit."
+    Write-Ok "Repositório oficial clonado."
 }
 elseif ($Force) {
     Push-Location $RepoRoot
     try {
-        & git fetch --depth 1 origin $PinnedCommit
+        & git fetch --depth 1 origin main
         if ($LASTEXITCODE -ne 0) { throw "Falha no git fetch." }
-        & git checkout $PinnedCommit
-        if ($LASTEXITCODE -ne 0) { throw "Falha ao fazer checkout do commit $PinnedCommit" }
+        & git reset --hard origin/main
+        if ($LASTEXITCODE -ne 0) { throw "Falha no git reset." }
+        Write-Ok "Repositório oficial atualizado."
     }
     finally { Pop-Location }
-
-    $currentHead = (& git -C $RepoRoot rev-parse HEAD).Trim()
-    if ($currentHead -ne $PinnedCommit) {
-        throw "Commit invalido apos checkout. Esperado: $PinnedCommit, Obtido: $currentHead"
-    }
-    Write-Ok "Repositorio oficial restaurado para o commit $PinnedCommit."
 }
 else {
-    Write-Ok "Clone oficial ja existe. Use -Force para restaurar a versao homologada."
+    Write-Ok "Clone oficial já existe. Use -Force para atualizar."
 }
 
 $pluginRoot = Join-Path $RepoRoot $PluginSourceRelative
 $skillsSource = Join-Path $pluginRoot "skills"
 if (-not (Test-Path -LiteralPath $skillsSource)) {
-    throw "Estrutura esperada nao encontrada: $skillsSource"
+    throw "Estrutura esperada não encontrada: $skillsSource"
 }
 
 # ---------------------------------------------------------------------------
-# Skills compartilhadas (somente gerenciadas pelo acelerador)
+# Skills compartilhadas
 # ---------------------------------------------------------------------------
 Write-Step "Atualizando skills compartilhadas"
-$managedSkills = Get-ChildItem -LiteralPath $skillsSource -Directory -ErrorAction SilentlyContinue |
-    Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName "SKILL.md") } |
-    Select-Object -ExpandProperty Name
-
 Get-ChildItem -LiteralPath $SharedSkillsRoot -Directory -ErrorAction SilentlyContinue |
-    Where-Object { $managedSkills -contains $_.Name } |
     Remove-Item -Recurse -Force
 
 $skillFolders = Get-ChildItem -LiteralPath $skillsSource -Directory |
@@ -203,88 +177,61 @@ foreach ($folder in $skillFolders) {
     Write-Ok "Skill compartilhada: $($folder.Name)"
 }
 
-# ---------------------------------------------------------------------------
-# Diretorio common (referenciado pelas skills via ../../common/)
-# ---------------------------------------------------------------------------
-Write-Step "Atualizando diretorio common"
-$commonSource = Join-Path $pluginRoot "common"
-if (-not (Test-Path -LiteralPath $commonSource)) {
-    Write-WarnMsg "Diretorio common nao encontrado em: $commonSource - ignorando."
-}
-else {
-    $managedCommon = @("COMMON-CORE.md", "COMMON-CLI.md", "ITEM-DEFINITIONS-CORE.md")
-    Get-ChildItem -LiteralPath $SharedCommonRoot -File -ErrorAction SilentlyContinue |
-        Where-Object { $managedCommon -contains $_.Name } |
-        Remove-Item -Force
-
-    Copy-Item -LiteralPath (Join-Path $commonSource "*") -Destination $SharedCommonRoot -Recurse -Force
-    Write-Ok "Diretorio common atualizado em: $SharedCommonRoot"
-}
+Copy-Item -LiteralPath $pluginRoot -Destination (Join-Path $InstallRoot "vendor\powerbi-authoring") -Recurse -Force
+Write-Ok "Plugin completo mantido em vendor para consulta."
 
 # ---------------------------------------------------------------------------
-# Plugin powerbi-authoring completo (idempotente)
-# ---------------------------------------------------------------------------
-Write-Step "Mantendo plugin completo para consulta"
-$vendorPlugin = Join-Path $InstallRoot "vendor\powerbi-authoring"
-if (Test-Path -LiteralPath $vendorPlugin) {
-    Remove-Item -LiteralPath $vendorPlugin -Recurse -Force
-    Write-Ok "Diretorio vendor anterior removido para evitar aninhamento."
-}
-Copy-Item -LiteralPath $pluginRoot -Destination $vendorPlugin -Recurse -Force
-Write-Ok "Plugin completo mantido em: $vendorPlugin"
-
-# ---------------------------------------------------------------------------
-# Node local: evita npm -g e privilegios de administrador
+# Node local: evita npm -g e privilégios de administrador
 # ---------------------------------------------------------------------------
 if (-not $SkipNpmInstall) {
     Write-Step "Instalando CLIs Power BI localmente no acelerador"
     & npm install --prefix $NodeLocalRoot `
-        @microsoft/powerbi-report-authoring-cli@0.1.1 `
-        @microsoft/powerbi-desktop-bridge-cli@0.1.1
+        @microsoft/powerbi-report-authoring-cli `
+        @microsoft/powerbi-desktop-bridge-cli
     if ($LASTEXITCODE -ne 0) {
         throw "Falha ao instalar as CLIs Power BI localmente via npm."
     }
     Write-Ok "CLIs instaladas em: $NodeLocalRoot"
 }
 else {
-    Write-WarnMsg "Instalacao npm ignorada por -SkipNpmInstall."
+    Write-WarnMsg "Instalação npm ignorada por -SkipNpmInstall."
 }
 
 # ---------------------------------------------------------------------------
 # Templates de projeto
 # ---------------------------------------------------------------------------
 $agentsTemplate = @'
-# Power BI PBIP - regras do projeto
+# Power BI PBIP — regras do projeto
 
 Este projeto usa um acelerador local de OpenCode + Power BI.
-As skills sao vinculadas de `.opencode/skills` para um diretorio compartilhado no servidor.
+As skills são vinculadas de `.opencode/skills` para um diretório compartilhado no servidor.
 
-## Escopo local e seguranca
+## Escopo local e segurança
 - Trabalhar somente com os arquivos locais PBIP/PBIR/TMDL deste projeto.
-- Nao configurar, consultar ou publicar no Power BI Service/Fabric.
-- Nao usar Power BI Remote MCP, OAuth, tenant, workspace ou semantic model remoto.
-- Nao pedir nem armazenar credenciais de cliente neste projeto.
-- Nao alterar fontes de dados, parametros ou credenciais sem instrucao explicita.
+- Não configurar, consultar ou publicar no Power BI Service/Fabric.
+- Não usar Power BI Remote MCP, OAuth, tenant, workspace ou semantic model remoto.
+- Não pedir nem armazenar credenciais de cliente neste projeto.
+- Não alterar fontes de dados, parâmetros ou credenciais sem instrução explícita.
 
-## Fluxo obrigatorio
+## Fluxo obrigatório
 1. Para entender a necessidade: usar skill de planejamento.
 2. Para UX e layout: usar skill de design.
-3. Antes de editar arquivos PBIR: explicar o plano e aguardar aprovacao, salvo pedido explicito de implementacao imediata.
+3. Antes de editar arquivos PBIR: explicar o plano e aguardar aprovação, salvo pedido explícito de implementação imediata.
 4. Antes de criar bindings: inspecionar os arquivos TMDL/PBIR existentes. Nunca inventar tabela, coluna ou medida.
-5. Apos cada lote logico de mudancas:
+5. Após cada lote lógico de mudanças:
    `powerbi-report-author validate <pasta-do-arquivo-.Report>`
 6. Para validar o resultado visual, quando Power BI Desktop estiver aberto:
    - `powerbi-desktop status`
    - `powerbi-desktop reload`
    - `powerbi-desktop screenshot`
-7. Nao atualizar manualmente `$schema`.
-8. Nao alterar RLS, incremental refresh, relacionamentos ou medidas criticas sem explicar impacto e rollback.
+7. Não atualizar manualmente `$schema`.
+8. Não alterar RLS, incremental refresh, relacionamentos ou medidas críticas sem explicar impacto e rollback.
 
 ## Qualidade
 - Confirmar granularidade, filtros e contexto DAX.
-- Preferir dimensoes e tabela calendario ja existentes.
+- Preferir dimensões e tabela calendário já existentes.
 - Evitar relacionamentos bidirecionais sem justificativa.
-- Registrar decisoes e analises em `docs/`.
+- Registrar decisões e análises em `docs/`.
 '@
 Write-FileUtf8NoBom (Join-Path $TemplateRoot "AGENTS.md") $agentsTemplate -Overwrite:$true
 
@@ -301,7 +248,7 @@ $accelerator = "__ACCELERATOR_ROOT__"
 $starter = Join-Path $accelerator "bin\Start-PowerBI-OpenCode.ps1"
 
 if (-not (Test-Path -LiteralPath $starter)) {
-    throw "Acelerador nao encontrado em: $starter"
+    throw "Acelerador não encontrado em: $starter"
 }
 
 & $starter -ProjectPath $PSScriptRoot -InitializeOnly:$InitializeOnly -OpenDesktop:$OpenDesktop -Force:$Force
@@ -321,13 +268,12 @@ $ErrorActionPreference = "Stop"
 
 $AcceleratorRoot = Split-Path -Parent $PSScriptRoot
 $SharedSkillsRoot = Join-Path $AcceleratorRoot "skills"
-$SharedCommonRoot = Join-Path $AcceleratorRoot "common"
 $LocalBin = Join-Path $AcceleratorRoot "node\node_modules\.bin"
 $TemplateRoot = Join-Path $AcceleratorRoot "templates"
 
 $ProjectPath = [IO.Path]::GetFullPath($ProjectPath)
 if (-not (Test-Path -LiteralPath $ProjectPath)) {
-    throw "Pasta do projeto nao encontrada: $ProjectPath"
+    throw "Pasta do projeto não encontrada: $ProjectPath"
 }
 
 function Write-Step([string]$Text) { Write-Host "`n==> $Text" -ForegroundColor Cyan }
@@ -352,10 +298,10 @@ function Write-FileUtf8NoBom([string]$Path, [string]$Content, [switch]$Overwrite
 
 Write-Step "Preparando projeto Power BI local"
 if (-not (Test-Path -LiteralPath $SharedSkillsRoot)) {
-    throw "Skills compartilhadas nao encontradas: $SharedSkillsRoot"
+    throw "Skills compartilhadas não encontradas: $SharedSkillsRoot"
 }
 if (-not (Test-Path -LiteralPath $LocalBin)) {
-    throw "CLIs locais nao encontradas: $LocalBin. Reexecute o instalador central."
+    throw "CLIs locais não encontradas: $LocalBin. Reexecute o instalador central."
 }
 
 $pbip = Get-ChildItem -LiteralPath $ProjectPath -Filter "*.pbip" -File -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -363,22 +309,21 @@ if ($pbip) {
     Write-Ok "PBIP encontrado: $($pbip.Name)"
 }
 else {
-    Write-WarnMsg "Nenhum .pbip encontrado. A estrutura sera preparada mesmo assim."
+    Write-WarnMsg "Nenhum .pbip encontrado. A estrutura será preparada mesmo assim."
 }
 
+# As CLIs só são adicionadas ao PATH da sessão atual; não altera PATH do Windows.
 $env:PATH = "$LocalBin;$env:PATH"
 $env:POWERBI_OPENCODE_ACCELERATOR = $AcceleratorRoot
 
 $opencodeRoot = Join-Path $ProjectPath ".opencode"
 $projectSkills = Join-Path $opencodeRoot "skills"
-$projectCommon = Join-Path $opencodeRoot "common"
 Ensure-Dir $opencodeRoot
 
-# Junction de skills
 if (Test-Path -LiteralPath $projectSkills) {
     if (Is-Junction $projectSkills) {
         Remove-Item -LiteralPath $projectSkills -Force
-        Write-Ok "Junction anterior de skills removida."
+        Write-Ok "Junction anterior removida."
     }
     elseif ($Force) {
         $backup = "$projectSkills.backup-$(Get-Date -Format 'yyyyMMddHHmmss')"
@@ -387,37 +332,15 @@ if (Test-Path -LiteralPath $projectSkills) {
     }
     else {
         throw @"
-Ja existe '$projectSkills' e ela nao e uma junction.
-Para preservar seguranca, o script nao a substituiu.
-Use -Force para move-la para backup e criar o vinculo compartilhado.
+Já existe '$projectSkills' e ela não é uma junction.
+Para preservar segurança, o script não a substituiu.
+Use -Force para movê-la para backup e criar o vínculo compartilhado.
 "@
     }
 }
+
 New-Item -ItemType Junction -Path $projectSkills -Target $SharedSkillsRoot | Out-Null
 Write-Ok "Skills vinculadas ao acelerador compartilhado."
-
-# Junction de common
-if (Test-Path -LiteralPath $projectCommon) {
-    if (Is-Junction $projectCommon) {
-        Remove-Item -LiteralPath $projectCommon -Force
-        Write-Ok "Junction anterior de common removida."
-    }
-    elseif ($Force) {
-        $backup = "$projectCommon.backup-$(Get-Date -Format 'yyyyMMddHHmmss')"
-        Move-Item -LiteralPath $projectCommon -Destination $backup
-        Write-WarnMsg "Common local preservado em: $backup"
-    }
-    else {
-        throw "Ja existe '$projectCommon' e nao e uma junction. Use -Force para substituir."
-    }
-}
-if (Test-Path -LiteralPath $SharedCommonRoot) {
-    New-Item -ItemType Junction -Path $projectCommon -Target $SharedCommonRoot | Out-Null
-    Write-Ok "Common vinculado ao acelerador compartilhado."
-}
-else {
-    Write-WarnMsg "Diretorio common nao encontrado. Referencias em skills podem falhar."
-}
 
 $agentsTarget = Join-Path $ProjectPath "AGENTS.md"
 $agentsSource = Join-Path $TemplateRoot "AGENTS.md"
@@ -437,20 +360,20 @@ Ensure-Dir $prompts
 $diagnosticPrompt = @'
 Analise este projeto Power BI PBIP sem alterar arquivos.
 
-Trabalhe somente com os arquivos locais. Nao use Power BI Service, Fabric, MCP remoto,
-OAuth ou publicacao.
+Trabalhe somente com os arquivos locais. Não use Power BI Service, Fabric, MCP remoto,
+OAuth ou publicação.
 
-Use as skills de planejamento, design e autoria quando aplicavel.
+Use as skills de planejamento, design e autoria quando aplicável.
 
 Entregue:
-1. Paginas e visuais existentes.
+1. Páginas e visuais existentes.
 2. Tabelas, medidas e colunas usadas.
-3. Filtros de relatorio, pagina e visual.
+3. Filtros de relatório, página e visual.
 4. Riscos de DAX, granularidade, relacionamentos e performance.
-5. Problemas de UX e melhorias possiveis.
-6. Priorizacao de alto, medio e baixo impacto.
+5. Problemas de UX e melhorias possíveis.
+6. Priorização de alto, médio e baixo impacto.
 
-Nao implemente nada ainda.
+Não implemente nada ainda.
 '@
 Write-FileUtf8NoBom (Join-Path $prompts "01-diagnostico-local.md") $diagnosticPrompt -Overwrite:$Force
 
@@ -490,14 +413,13 @@ if ($OpenDesktop -and $pbip) {
 Write-Step "Pronto"
 Write-Host "Projeto: $ProjectPath"
 Write-Host "Skills:  $projectSkills"
-Write-Host "Common:  $projectCommon"
 Write-Host "Atalho:  $shortcutCmd"
 Write-Host ""
 Write-Host "Modo local: sem Power BI Service, Fabric, OAuth ou Power BI Remote MCP." -ForegroundColor Green
-Write-Host "CLIs disponiveis somente nesta sessao: powerbi-report-author e powerbi-desktop"
+Write-Host "CLIs disponíveis somente nesta sessão: powerbi-report-author e powerbi-desktop"
 
 if ($InitializeOnly) {
-    Write-Host "`nInicializacao concluida. Para abrir depois, execute:"
+    Write-Host "`nInicialização concluída. Para abrir depois, execute:"
     Write-Host "  .\Abrir-PowerBI-OpenCode.ps1"
     exit 0
 }
@@ -514,22 +436,59 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Start-PowerBI-Open
 '@
 Write-FileUtf8NoBom (Join-Path $BinRoot "pbi-ai.cmd") $cmdStarter -Overwrite:$true
 
-# Template tem caminho resolvido no momento da instalacao.
+# Template tem caminho resolvido no momento da instalação.
 $shortcutPs1Resolved = $shortcutPs1Template.Replace("__ACCELERATOR_ROOT__", $InstallRoot.Replace("'", "''"))
 Write-FileUtf8NoBom (Join-Path $TemplateRoot "Abrir-PowerBI-OpenCode.ps1.template") $shortcutPs1Resolved -Overwrite:$true
+
+$readme = @"
+# Acelerador Local Power BI + OpenCode
+
+## Finalidade
+Esta instalação é intencionalmente local:
+- skills oficiais de Power BI
+- PBIP/PBIR/TMDL local
+- validação e interação com Power BI Desktop
+- sem Power BI Service, Fabric, publicação, OAuth ou Power BI Remote MCP
+
+## Uso em um projeto PBIP
+Abra PowerShell dentro da pasta do projeto e execute:
+
+```powershell
+& "$BinRoot\Start-PowerBI-OpenCode.ps1" -ProjectPath .
+```
+
+Na primeira execução serão criados atalhos dentro da pasta:
+- `Abrir-PowerBI-OpenCode.ps1`
+- `Abrir-PowerBI-OpenCode.cmd`
+
+Depois, basta usar o `.cmd` com duplo clique ou rodar o `.ps1`.
+
+## Power BI Desktop
+Abra o `.pbip` e habilite o recurso de preview de acesso a ferramentas externas
+por APIs locais seguras. Em seguida teste:
+
+```powershell
+powerbi-desktop status
+powerbi-report-author --version
+```
+
+## Por que não há MCP remoto?
+O Remote Power BI MCP consulta modelos semânticos hospedados no Power BI Service/Fabric.
+Ele exige autenticação OAuth/Entra, permissões no tenant e Build no modelo. Para este
+acelerador local, ele foi deliberadamente excluído.
+"@
+Write-FileUtf8NoBom (Join-Path $InstallRoot "README.md") $readme -Overwrite:$true
 
 # ---------------------------------------------------------------------------
 # Resultado
 # ---------------------------------------------------------------------------
-Write-Step "Instalacao concluida"
+Write-Step "Instalação concluída"
 Write-Host "Acelerador: $InstallRoot" -ForegroundColor Green
-Write-Host "Commit Microsoft fixado: $PinnedCommit" -ForegroundColor Green
 Write-Host "Starter:    $BinRoot\Start-PowerBI-OpenCode.ps1"
 Write-Host ""
 Write-Host "Para preparar um projeto PBIP:" -ForegroundColor Cyan
 Write-Host "  cd C:\caminho\do\projeto"
 Write-Host "  & `"$BinRoot\Start-PowerBI-OpenCode.ps1`" -ProjectPath ."
 Write-Host ""
-Write-Host "Apos a primeira vez, use o atalho criado no proprio projeto:"
+Write-Host "Após a primeira vez, use o atalho criado no próprio projeto:"
 Write-Host "  Abrir-PowerBI-OpenCode.cmd"
-
