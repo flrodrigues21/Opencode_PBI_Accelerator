@@ -42,10 +42,11 @@ https://github.com/anomalyco/opencode/blob/main/LICENSE
 
 ---
 
-## Power BI Report Authoring CLI and Power BI Desktop Bridge CLI
+## Power BI Report Authoring CLI, Power BI Desktop Bridge CLI, and Power BI Modeling MCP
 
 Installed via npm from [@microsoft/powerbi-report-authoring-cli](https://www.npmjs.com/package/@microsoft/powerbi-report-authoring-cli)
-and [@microsoft/powerbi-desktop-bridge-cli](https://www.npmjs.com/package/@microsoft/powerbi-desktop-bridge-cli).
+and [@microsoft/powerbi-desktop-bridge-cli](https://www.npmjs.com/package/@microsoft/powerbi-desktop-bridge-cli),
+plus [@microsoft/powerbi-modeling-mcp](https://www.npmjs.com/package/@microsoft/powerbi-modeling-mcp).
 
 These packages are published by Microsoft and licensed under MIT.
 

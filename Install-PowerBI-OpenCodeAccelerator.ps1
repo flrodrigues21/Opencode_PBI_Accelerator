@@ -1,538 +1,544 @@
-<#
-.SYNOPSIS
-Instala um acelerador local compartilhado para OpenCode + Power BI PBIP.
-
-.DESCRIPTION
-Instala UMA VEZ no servidor:
-- Microsoft skills-for-fabric (somente o plugin powerbi-authoring)
-- Power BI Report Authoring CLI
-- Power BI Desktop Bridge CLI
-- Scripts de atalho para preparar/abrir qualquer projeto PBIP no OpenCode
-
-Nao configura Power BI Service, Fabric, publicacao, tenant, OAuth, App Registration
-ou Power BI Remote MCP. O objetivo e trabalhar localmente/offline com PBIP/PBIR.
-
-A cada projeto, use:
-  C:\OpenCode\PowerBI-Accelerator\bin\Start-PowerBI-OpenCode.ps1 -ProjectPath .
-
-O script cria dentro do projeto:
-- .opencode\skills  -> junction para as skills compartilhadas
-- .opencode\common  -> junction para os arquivos comuns
-- AGENTS.md          -> regras locais do projeto
-- Abrir-PowerBI-OpenCode.ps1
-- Abrir-PowerBI-OpenCode.cmd  -> atalho clicavel
-
-.PARAMETER InstallRoot
-Pasta comum no servidor onde ficarao skills, CLIs npm e scripts.
-Padrao: C:\OpenCode\PowerBI-Accelerator
-
-.PARAMETER Force
-Restaura a versao homologada do repositorio Microsoft e recria arquivos de atalho/regra.
-
-.PARAMETER SkipNpmInstall
-Pula a instalacao local das CLIs Power BI, util para testes.
-
-.EXAMPLE
-Set-ExecutionPolicy -Scope Process Bypass
-.\Install-PowerBI-OpenCodeAccelerator.ps1
-
-.EXAMPLE
-.\Install-PowerBI-OpenCodeAccelerator.ps1 -InstallRoot "D:\Ferramentas\PowerBI-Accelerator" -Force
-
-.NOTES
-Pre-requisitos:
-- Git
-- Node.js 20 ou superior
-- OpenCode
-- Power BI Desktop (para bridge/screenshot/reload)
-
-As CLIs sao instaladas LOCALMENTE em:
-  <InstallRoot>\node\node_modules\.bin
-Nenhuma instalacao npm global e feita.
-#>
+#Requires -Version 5.1
 
 [CmdletBinding()]
 param(
     [string]$InstallRoot = "C:\OpenCode\PowerBI-Accelerator",
     [switch]$Force,
-    [switch]$SkipNpmInstall
+    [switch]$SkipNpmInstall,
+    [string]$SkillsSourcePath,
+    [string]$RepositoryUrl = "https://github.com/microsoft/skills-for-fabric.git",
+    [switch]$TestOnlyAllowUnverifiedSkillsSource,
+    [switch]$TestOnlySkipPrerequisiteChecks,
+    [int]$TestOnlyFailAfterApplyCount = 0
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+$PinnedCommit = "bc42aaf734771bf752c1d7082dd91e5a6ca72b9f"
+$PluginVersion = "0.3.19"
+$PluginRelativePath = "plugins\powerbi-authoring"
+$ExpectedMicrosoftSkills = @("powerbi-report-cli", "semantic-model-authoring")
+$BundledCustomSkills = @("rode-o-bpa", "check-updates")
+$RequiredCommonFiles = @("COMMON-CORE.md", "COMMON-CLI.md", "ITEM-DEFINITIONS-CORE.md")
+$BundleRoot = $PSScriptRoot
 $InstallRoot = [IO.Path]::GetFullPath($InstallRoot)
-$RepoUrl = "https://github.com/microsoft/skills-for-fabric.git"
-$PinnedCommit = "ac156d284ab8e51f121af3f42303ea79c88cdab5"
-$RepoRoot = Join-Path $InstallRoot "vendor\skills-for-fabric"
-$PluginSourceRelative = "plugins\powerbi-authoring"
-$SharedSkillsRoot = Join-Path $InstallRoot "skills"
-$SharedCommonRoot = Join-Path $InstallRoot "common"
-$NodeLocalRoot = Join-Path $InstallRoot "node"
-$BinRoot = Join-Path $InstallRoot "bin"
-$TemplateRoot = Join-Path $InstallRoot "templates"
+$InventoryPath = Join-Path $InstallRoot "managed-inventory.json"
+$StageRoot = Join-Path ([IO.Path]::GetTempPath()) ("powerbi-opencode-stage-" + [Guid]::NewGuid().ToString("N"))
+$PayloadRoot = Join-Path $StageRoot "payload"
+$commitStarted = $false
+$backupRoot = $null
+$newManagedFiles = @()
+$backupManifest = $null
 
 function Write-Step([string]$Text) { Write-Host "`n==> $Text" -ForegroundColor Cyan }
 function Write-Ok([string]$Text) { Write-Host "    OK  $Text" -ForegroundColor Green }
-function Write-WarnMsg([string]$Text) { Write-Host "    AVISO  $Text" -ForegroundColor Yellow }
+function Write-WarnMessage([string]$Text) { Write-Host "    AVISO  $Text" -ForegroundColor Yellow }
 
-function Ensure-Dir([string]$Path) {
-    if (-not (Test-Path -LiteralPath $Path)) {
+function Ensure-Directory([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
         New-Item -ItemType Directory -Path $Path -Force | Out-Null
     }
 }
 
+function Write-Utf8NoBom([string]$Path, [string]$Content) {
+    Ensure-Directory (Split-Path -Parent $Path)
+    [IO.File]::WriteAllText($Path, $Content, (New-Object Text.UTF8Encoding($false)))
+}
+
 function Assert-Command([string]$Name, [string]$Hint) {
-    if ($null -eq (Get-Command $Name -ErrorAction SilentlyContinue)) {
-        throw "Comando '$Name' nao encontrado. $Hint"
-    }
-    $version = try { (& $Name --version 2>&1 | Select-Object -First 1 | Out-String).Trim() } catch { "" }
-    Write-Ok "$Name encontrado $version"
+    $command = Get-Command $Name -ErrorAction SilentlyContinue
+    if ($null -eq $command) { throw "Comando '$Name' nao encontrado. $Hint" }
+    & $command.Source --version *> $null
+    if ($LASTEXITCODE -ne 0) { throw "'$Name --version' falhou com codigo $LASTEXITCODE." }
+    Write-Ok "$Name encontrado."
 }
 
-function Assert-Node20 {
-    Assert-Command "node" "Instale Node.js LTS 20+. Em servidor sem winget, use o instalador MSI oficial."
-    $v = (& node --version).Trim()
-    if ($v -notmatch '^v(\d+)\.') { throw "Versao de Node invalida: $v" }
-    if ([int]$Matches[1] -lt 20) { throw "E necessario Node.js 20+. Detectado: $v" }
-    Assert-Command "npm" "npm deve vir com o Node.js LTS."
-}
-
-function Write-FileUtf8NoBom([string]$Path, [string]$Content, [switch]$Overwrite) {
-    Ensure-Dir (Split-Path -Parent $Path)
-    if ((Test-Path -LiteralPath $Path) -and -not $Overwrite) {
-        Write-WarnMsg "Preservado: $Path"
+function Assert-Prerequisites {
+    if ($TestOnlySkipPrerequisiteChecks) {
+        Write-WarnMessage "Verificacoes de disponibilidade ignoradas por switch exclusivo de teste."
         return
     }
-    [IO.File]::WriteAllText($Path, $Content, [Text.UTF8Encoding]::new($false))
-    Write-Ok "Criado/atualizado: $Path"
+
+    Assert-Command "git" "Instale Git for Windows."
+    Assert-Command "node" "Instale Node.js 20 ou superior."
+    $nodeVersion = (& node --version 2>&1 | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0 -or $nodeVersion -notmatch '^v(\d+)\.') {
+        throw "Nao foi possivel determinar a versao do Node.js: $nodeVersion"
+    }
+    if ([int]$Matches[1] -lt 20) { throw "Node.js 20+ e obrigatorio. Detectado: $nodeVersion" }
+    Assert-Command "npm" "npm deve ser instalado com o Node.js."
+    Assert-Command "opencode" "Instale o OpenCode antes de executar o instalador."
 }
 
-# ---------------------------------------------------------------------------
-# Validacao e estrutura central
-# ---------------------------------------------------------------------------
-Write-Step "Validando pre-requisitos"
-Assert-Command "git" "Instale Git for Windows."
-Assert-Node20
-Assert-Command "opencode" "Instale/configure o OpenCode antes de continuar."
+function Invoke-Git([string[]]$Arguments, [string]$FailureMessage) {
+    & git @Arguments
+    if ($LASTEXITCODE -ne 0) { throw "$FailureMessage (codigo $LASTEXITCODE)." }
+}
 
-Write-Step "Criando estrutura compartilhada"
-Ensure-Dir $InstallRoot
-Ensure-Dir $SharedSkillsRoot
-Ensure-Dir $SharedCommonRoot
-Ensure-Dir $NodeLocalRoot
-Ensure-Dir $BinRoot
-Ensure-Dir $TemplateRoot
-
-# ---------------------------------------------------------------------------
-# Clone/atualizacao do repositorio Microsoft (versao homologada)
-# ---------------------------------------------------------------------------
-Write-Step "Obtendo Microsoft skills-for-fabric (commit $PinnedCommit)"
-Ensure-Dir (Split-Path -Parent $RepoRoot)
-
-if (-not (Test-Path -LiteralPath (Join-Path $RepoRoot ".git"))) {
-    if (Test-Path -LiteralPath $RepoRoot) {
-        $backup = "$RepoRoot.backup-$(Get-Date -Format 'yyyyMMddHHmmss')"
-        Move-Item -LiteralPath $RepoRoot -Destination $backup
-        Write-WarnMsg "Pasta anterior preservada em: $backup"
+function Copy-DirectoryContents([string]$Source, [string]$Destination) {
+    Ensure-Directory $Destination
+    foreach ($item in @(Get-ChildItem -LiteralPath $Source -Force)) {
+        Copy-Item -LiteralPath $item.FullName -Destination $Destination -Recurse -Force
     }
+}
 
-    & git clone $RepoUrl $RepoRoot
-    if ($LASTEXITCODE -ne 0) { throw "Falha ao clonar $RepoUrl" }
+function Get-RelativePath([string]$Root, [string]$Path) {
+    $rootFull = [IO.Path]::GetFullPath($Root).TrimEnd('\') + '\'
+    $pathFull = [IO.Path]::GetFullPath($Path)
+    if (-not $pathFull.StartsWith($rootFull, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Caminho fora da raiz permitida: $Path"
+    }
+    return $pathFull.Substring($rootFull.Length)
+}
 
-    Push-Location $RepoRoot
+function Resolve-SafeRelativePath([string]$Root, [string]$RelativePath) {
+    if ([string]::IsNullOrWhiteSpace($RelativePath) -or [IO.Path]::IsPathRooted($RelativePath)) {
+        throw "Caminho relativo invalido no manifesto: '$RelativePath'."
+    }
+    $rootFull = [IO.Path]::GetFullPath($Root).TrimEnd('\') + '\'
+    $full = [IO.Path]::GetFullPath((Join-Path $Root $RelativePath))
+    if (-not $full.StartsWith($rootFull, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Caminho escapa da raiz permitida: '$RelativePath'."
+    }
+    $current = [IO.Path]::GetFullPath($Root).TrimEnd('\')
+    foreach ($segment in $RelativePath -split '[\\/]') {
+        if ([string]::IsNullOrWhiteSpace($segment)) { continue }
+        $current = Join-Path $current $segment
+        $item = Get-Item -LiteralPath $current -Force -ErrorAction SilentlyContinue
+        if ($null -ne $item -and (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)) {
+            throw "Caminho gerenciado contem junction ou link simbolico: '$RelativePath'."
+        }
+    }
+    return $full
+}
+
+function Assert-JsonFile([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw "JSON obrigatorio ausente: $Path" }
+    try { return (Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json) }
+    catch { throw "JSON invalido em '$Path': $($_.Exception.Message)" }
+}
+
+function Read-JsonDictionary([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw "JSON obrigatorio ausente: $Path" }
     try {
-        & git checkout $PinnedCommit
-        if ($LASTEXITCODE -ne 0) { throw "Falha ao fazer checkout do commit $PinnedCommit" }
+        Add-Type -AssemblyName System.Web.Extensions
+        $serializer = New-Object Web.Script.Serialization.JavaScriptSerializer
+        $serializer.MaxJsonLength = [int]::MaxValue
+        return $serializer.DeserializeObject((Get-Content -LiteralPath $Path -Raw))
     }
-    finally { Pop-Location }
+    catch { throw "JSON invalido em '$Path': $($_.Exception.Message)" }
+}
 
-    $currentHead = (& git -C $RepoRoot rev-parse HEAD).Trim()
-    if ($currentHead -ne $PinnedCommit) {
-        throw "Commit invalido apos checkout. Esperado: $PinnedCommit, Obtido: $currentHead"
+function Assert-PowerShellSyntax([string]$Path) {
+    $tokens = $null
+    $errors = $null
+    [void][Management.Automation.Language.Parser]::ParseFile($Path, [ref]$tokens, [ref]$errors)
+    if ($errors.Count -gt 0) { throw "PowerShell invalido em '$Path': $($errors[0].Message)" }
+}
+
+function Assert-MarkdownDependencies([string]$SkillsRoot, [string]$PayloadRootPath) {
+    $payloadPrefix = [IO.Path]::GetFullPath($PayloadRootPath).TrimEnd('\') + '\'
+    foreach ($markdown in @(Get-ChildItem -LiteralPath $SkillsRoot -Filter "*.md" -File -Recurse)) {
+        $content = Get-Content -LiteralPath $markdown.FullName -Raw
+        $matches = [regex]::Matches($content, '(?<!!)\[[^\]]*\]\((?<target>[^)]+)\)')
+        foreach ($match in $matches) {
+            $target = $match.Groups["target"].Value.Trim()
+            if ($target.StartsWith("<") -and $target.EndsWith(">")) { $target = $target.Substring(1, $target.Length - 2) }
+            if ($target -match '^(?i)(https?:|mailto:|data:|#)') { continue }
+            if ($target -match '^(.+?\.md)(?:\s+["''].*)?$') { $target = $Matches[1] } else { continue }
+            $target = [Uri]::UnescapeDataString(($target -split '#', 2)[0]).Replace('/', '\')
+            $resolved = [IO.Path]::GetFullPath((Join-Path $markdown.DirectoryName $target))
+            if (-not $resolved.StartsWith($payloadPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+                throw "Dependencia Markdown escapa do payload: '$target' em '$($markdown.FullName)'."
+            }
+            if (-not (Test-Path -LiteralPath $resolved -PathType Leaf)) {
+                throw "Dependencia Markdown ausente: '$target' referenciada por '$($markdown.FullName)'."
+            }
+        }
     }
-    Write-Ok "Repositorio oficial clonado e fixado no commit $PinnedCommit."
 }
-elseif ($Force) {
-    Push-Location $RepoRoot
-    try {
-        & git fetch --depth 1 origin $PinnedCommit
-        if ($LASTEXITCODE -ne 0) { throw "Falha no git fetch." }
-        & git checkout $PinnedCommit
-        if ($LASTEXITCODE -ne 0) { throw "Falha ao fazer checkout do commit $PinnedCommit" }
+
+function Assert-SkillMetadata([string]$SkillRoot, [string]$ExpectedName) {
+    $skillFile = Join-Path $SkillRoot "SKILL.md"
+    $content = Get-Content -LiteralPath $skillFile -Raw
+    if ($content -notmatch '(?s)^---\s*\r?\n(?<frontmatter>.*?)\r?\n---') {
+        throw "Frontmatter ausente em: $skillFile"
     }
-    finally { Pop-Location }
-
-    $currentHead = (& git -C $RepoRoot rev-parse HEAD).Trim()
-    if ($currentHead -ne $PinnedCommit) {
-        throw "Commit invalido apos checkout. Esperado: $PinnedCommit, Obtido: $currentHead"
+    $frontmatter = $Matches["frontmatter"]
+    if ($frontmatter -notmatch '(?m)^name:\s*(?<name>[^\r\n#]+?)\s*$' -or $Matches["name"].Trim() -ne $ExpectedName) {
+        throw "Nome da skill nao corresponde ao diretorio '$ExpectedName': $skillFile"
     }
-    Write-Ok "Repositorio oficial restaurado para o commit $PinnedCommit."
-}
-else {
-    $currentHead = (& git -C $RepoRoot rev-parse HEAD).Trim()
-    if ($currentHead -ne $PinnedCommit) {
-        throw "Versao do repositorio nao corresponde a homologada. HEAD: $currentHead, Esperado: $PinnedCommit. Execute novamente com -Force para restaurar."
+    if ($frontmatter -notmatch '(?m)^description:\s*(?:>|\|)?\s*(?:\r?\n|\S)') {
+        throw "Description ausente no frontmatter: $skillFile"
     }
-    Write-Ok "Clone oficial ja existe e corresponde ao commit homologado ($PinnedCommit)."
 }
 
-$pluginRoot = Join-Path $RepoRoot $PluginSourceRelative
-$skillsSource = Join-Path $pluginRoot "skills"
-if (-not (Test-Path -LiteralPath $skillsSource)) {
-    throw "Estrutura esperada nao encontrada: $skillsSource"
-}
-
-# ---------------------------------------------------------------------------
-# Skills compartilhadas (somente gerenciadas pelo acelerador)
-# ---------------------------------------------------------------------------
-Write-Step "Atualizando skills compartilhadas"
-$managedSkills = Get-ChildItem -LiteralPath $skillsSource -Directory -ErrorAction SilentlyContinue |
-    Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName "SKILL.md") } |
-    Select-Object -ExpandProperty Name
-
-Get-ChildItem -LiteralPath $SharedSkillsRoot -Directory -ErrorAction SilentlyContinue |
-    Where-Object { $managedSkills -contains $_.Name } |
-    Remove-Item -Recurse -Force
-
-$skillFolders = Get-ChildItem -LiteralPath $skillsSource -Directory |
-    Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName "SKILL.md") }
-
-if (-not $skillFolders) {
-    throw "Nenhuma SKILL.md encontrada em: $skillsSource"
-}
-
-foreach ($folder in $skillFolders) {
-    Copy-Item -LiteralPath $folder.FullName -Destination (Join-Path $SharedSkillsRoot $folder.Name) -Recurse -Force
-    Write-Ok "Skill compartilhada: $($folder.Name)"
-}
-
-# ---------------------------------------------------------------------------
-# Diretorio common (referenciado pelas skills via ../../common/)
-# ---------------------------------------------------------------------------
-Write-Step "Atualizando diretorio common"
-$commonSource = Join-Path $pluginRoot "common"
-if (-not (Test-Path -LiteralPath $commonSource)) {
-    Write-WarnMsg "Diretorio common nao encontrado em: $commonSource - ignorando."
-}
-else {
-    $managedCommon = @("COMMON-CORE.md", "COMMON-CLI.md", "ITEM-DEFINITIONS-CORE.md")
-    Get-ChildItem -LiteralPath $SharedCommonRoot -File -ErrorAction SilentlyContinue |
-        Where-Object { $managedCommon -contains $_.Name } |
-        Remove-Item -Force
-
-    Copy-Item -LiteralPath (Join-Path $commonSource "*") -Destination $SharedCommonRoot -Recurse -Force
-    Write-Ok "Diretorio common atualizado em: $SharedCommonRoot"
-}
-
-# ---------------------------------------------------------------------------
-# Plugin powerbi-authoring completo (idempotente)
-# ---------------------------------------------------------------------------
-Write-Step "Mantendo plugin completo para consulta"
-$vendorPlugin = Join-Path $InstallRoot "vendor\powerbi-authoring"
-if (Test-Path -LiteralPath $vendorPlugin) {
-    Remove-Item -LiteralPath $vendorPlugin -Recurse -Force
-    Write-Ok "Diretorio vendor anterior removido para evitar aninhamento."
-}
-Copy-Item -LiteralPath $pluginRoot -Destination $vendorPlugin -Recurse -Force
-Write-Ok "Plugin completo mantido em: $vendorPlugin"
-
-# ---------------------------------------------------------------------------
-# Node local: evita npm -g e privilegios de administrador
-# ---------------------------------------------------------------------------
-if (-not $SkipNpmInstall) {
-    Write-Step "Instalando CLIs Power BI localmente no acelerador"
-    & npm install --prefix $NodeLocalRoot `
-        @microsoft/powerbi-report-authoring-cli@0.1.1 `
-        @microsoft/powerbi-desktop-bridge-cli@0.1.1
-    if ($LASTEXITCODE -ne 0) {
-        throw "Falha ao instalar as CLIs Power BI localmente via npm."
+function Test-IsUnderRelativeRoot([string]$RelativePath, [string[]]$Roots) {
+    $normalized = $RelativePath.TrimStart('\')
+    foreach ($root in $Roots) {
+        $normalizedRoot = $root.TrimEnd('\')
+        if ($normalized -ieq $normalizedRoot -or $normalized.StartsWith($normalizedRoot + '\', [StringComparison]::OrdinalIgnoreCase)) {
+            return $true
+        }
     }
-    Write-Ok "CLIs instaladas em: $NodeLocalRoot"
-}
-else {
-    Write-WarnMsg "Instalacao npm ignorada por -SkipNpmInstall."
+    return $false
 }
 
-# ---------------------------------------------------------------------------
-# Templates de projeto
-# ---------------------------------------------------------------------------
-$agentsTemplate = @'
-# Power BI PBIP - regras do projeto
-
-Este projeto usa um acelerador local de OpenCode + Power BI.
-As skills sao vinculadas de `.opencode/skills` para um diretorio compartilhado no servidor.
-
-## Escopo local e seguranca
-- Trabalhar somente com os arquivos locais PBIP/PBIR/TMDL deste projeto.
-- Nao configurar, consultar ou publicar no Power BI Service/Fabric.
-- Nao usar Power BI Remote MCP, OAuth, tenant, workspace ou semantic model remoto.
-- Nao pedir nem armazenar credenciais de cliente neste projeto.
-- Nao alterar fontes de dados, parametros ou credenciais sem instrucao explicita.
-
-## Fluxo obrigatorio
-1. Para entender a necessidade: usar skill de planejamento.
-2. Para UX e layout: usar skill de design.
-3. Antes de editar arquivos PBIR: explicar o plano e aguardar aprovacao, salvo pedido explicito de implementacao imediata.
-4. Antes de criar bindings: inspecionar os arquivos TMDL/PBIR existentes. Nunca inventar tabela, coluna ou medida.
-5. Apos cada lote logico de mudancas:
-   `powerbi-report-author validate <pasta-do-arquivo-.Report>`
-6. Para validar o resultado visual, quando Power BI Desktop estiver aberto:
-   - `powerbi-desktop status`
-   - `powerbi-desktop reload`
-   - `powerbi-desktop screenshot`
-7. Nao atualizar manualmente `$schema`.
-8. Nao alterar RLS, incremental refresh, relacionamentos ou medidas criticas sem explicar impacto e rollback.
-
-## Qualidade
-- Confirmar granularidade, filtros e contexto DAX.
-- Preferir dimensoes e tabela calendario ja existentes.
-- Evitar relacionamentos bidirecionais sem justificativa.
-- Registrar decisoes e analises em `docs/`.
-'@
-Write-FileUtf8NoBom (Join-Path $TemplateRoot "AGENTS.md") $agentsTemplate -Overwrite:$true
-
-$shortcutPs1Template = @'
-[CmdletBinding()]
-param(
-    [switch]$InitializeOnly,
-    [switch]$OpenDesktop,
-    [switch]$Force
-)
-
-$ErrorActionPreference = "Stop"
-$accelerator = "__ACCELERATOR_ROOT__"
-$starter = Join-Path $accelerator "bin\Start-PowerBI-OpenCode.ps1"
-
-if (-not (Test-Path -LiteralPath $starter)) {
-    throw "Acelerador nao encontrado em: $starter"
-}
-
-& $starter -ProjectPath $PSScriptRoot -InitializeOnly:$InitializeOnly -OpenDesktop:$OpenDesktop -Force:$Force
-'@
-
-$projectStarter = @'
-[CmdletBinding()]
-param(
-    [string]$ProjectPath = (Get-Location).Path,
-    [switch]$InitializeOnly,
-    [switch]$OpenDesktop,
-    [switch]$Force
-)
-
-Set-StrictMode -Version Latest
-$ErrorActionPreference = "Stop"
-
-$AcceleratorRoot = Split-Path -Parent $PSScriptRoot
-$SharedSkillsRoot = Join-Path $AcceleratorRoot "skills"
-$SharedCommonRoot = Join-Path $AcceleratorRoot "common"
-$LocalBin = Join-Path $AcceleratorRoot "node\node_modules\.bin"
-$TemplateRoot = Join-Path $AcceleratorRoot "templates"
-
-$ProjectPath = [IO.Path]::GetFullPath($ProjectPath)
-if (-not (Test-Path -LiteralPath $ProjectPath)) {
-    throw "Pasta do projeto nao encontrada: $ProjectPath"
-}
-
-function Write-Step([string]$Text) { Write-Host "`n==> $Text" -ForegroundColor Cyan }
-function Write-Ok([string]$Text) { Write-Host "    OK  $Text" -ForegroundColor Green }
-function Write-WarnMsg([string]$Text) { Write-Host "    AVISO  $Text" -ForegroundColor Yellow }
-function Ensure-Dir([string]$Path) {
-    if (-not (Test-Path -LiteralPath $Path)) { New-Item -ItemType Directory -Path $Path -Force | Out-Null }
-}
-function Is-Junction([string]$Path) {
-    if (-not (Test-Path -LiteralPath $Path)) { return $false }
-    $item = Get-Item -LiteralPath $Path -Force
-    return (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)
-}
-function Write-FileUtf8NoBom([string]$Path, [string]$Content, [switch]$Overwrite) {
-    if ((Test-Path -LiteralPath $Path) -and -not $Overwrite) {
-        Write-WarnMsg "Preservado: $Path"
-        return
+function Get-Inventory {
+    if (-not (Test-Path -LiteralPath $InventoryPath -PathType Leaf)) { return $null }
+    $inventory = Assert-JsonFile $InventoryPath
+    if ($inventory.schemaVersion -ne 1 -or $null -eq $inventory.managedFiles) {
+        throw "Inventario gerenciado invalido: $InventoryPath"
     }
-    [IO.File]::WriteAllText($Path, $Content, [Text.UTF8Encoding]::new($false))
-    Write-Ok "Criado/atualizado: $Path"
+    return $inventory
 }
 
-Write-Step "Preparando projeto Power BI local"
-if (-not (Test-Path -LiteralPath $SharedSkillsRoot)) {
-    throw "Skills compartilhadas nao encontradas: $SharedSkillsRoot"
-}
-if (-not (Test-Path -LiteralPath $LocalBin)) {
-    throw "CLIs locais nao encontradas: $LocalBin. Reexecute o instalador central."
-}
-
-$pbip = Get-ChildItem -LiteralPath $ProjectPath -Filter "*.pbip" -File -ErrorAction SilentlyContinue | Select-Object -First 1
-if ($pbip) {
-    Write-Ok "PBIP encontrado: $($pbip.Name)"
-}
-else {
-    Write-WarnMsg "Nenhum .pbip encontrado. A estrutura sera preparada mesmo assim."
-}
-
-$env:PATH = "$LocalBin;$env:PATH"
-$env:POWERBI_OPENCODE_ACCELERATOR = $AcceleratorRoot
-
-$opencodeRoot = Join-Path $ProjectPath ".opencode"
-$projectSkills = Join-Path $opencodeRoot "skills"
-$projectCommon = Join-Path $opencodeRoot "common"
-Ensure-Dir $opencodeRoot
-
-# Junction de skills
-if (Test-Path -LiteralPath $projectSkills) {
-    if (Is-Junction $projectSkills) {
-        Remove-Item -LiteralPath $projectSkills -Force
-        Write-Ok "Junction anterior de skills removida."
+function Add-ExistingFiles([Collections.Generic.HashSet[string]]$Set, [string]$RelativePath) {
+    $full = Resolve-SafeRelativePath $InstallRoot $RelativePath
+    if (Test-Path -LiteralPath $full -PathType Leaf) {
+        [void]$Set.Add($RelativePath)
     }
-    elseif ($Force) {
-        $backup = "$projectSkills.backup-$(Get-Date -Format 'yyyyMMddHHmmss')"
-        Move-Item -LiteralPath $projectSkills -Destination $backup
-        Write-WarnMsg "Skills locais preservadas em: $backup"
+    elseif (Test-Path -LiteralPath $full -PathType Container) {
+        foreach ($file in @(Get-ChildItem -LiteralPath $full -File -Recurse -Force)) {
+            [void]$Set.Add((Get-RelativePath $InstallRoot $file.FullName))
+        }
+    }
+}
+
+function Restore-BackupInProcess($Manifest, [string]$BackupDirectory) {
+    foreach ($relative in @($Manifest.installedFiles)) {
+        $target = Resolve-SafeRelativePath $InstallRoot ([string]$relative)
+        if (Test-Path -LiteralPath $target -PathType Leaf) { Remove-Item -LiteralPath $target -Force }
+    }
+    foreach ($entry in @($Manifest.previousFiles)) {
+        $source = Resolve-SafeRelativePath $BackupDirectory ([string]$entry.backupPath)
+        $target = Resolve-SafeRelativePath $InstallRoot ([string]$entry.path)
+        Ensure-Directory (Split-Path -Parent $target)
+        Copy-Item -LiteralPath $source -Destination $target -Force
+    }
+}
+
+try {
+    Write-Step "Validando pre-requisitos"
+    Assert-Prerequisites
+
+    Ensure-Directory $StageRoot
+    Ensure-Directory $PayloadRoot
+
+    Write-Step "Preparando e validando a fonte Microsoft fixada"
+    $sourceWasCloned = [string]::IsNullOrWhiteSpace($SkillsSourcePath)
+    $sourceGitRoot = $null
+    if ($sourceWasCloned) {
+        $sourceRoot = Join-Path $StageRoot "skills-for-fabric"
+        Invoke-Git @("clone", "--no-checkout", $RepositoryUrl, $sourceRoot) "Falha ao clonar $RepositoryUrl"
+        Invoke-Git @("-C", $sourceRoot, "checkout", "--detach", $PinnedCommit) "Falha ao obter o commit fixado $PinnedCommit"
+        $sourceHead = (& git -C $sourceRoot rev-parse HEAD 2>&1 | Out-String).Trim()
+        if ($LASTEXITCODE -ne 0) { throw "Falha ao ler o HEAD da fonte clonada." }
+        if ($sourceHead -ne $PinnedCommit) { throw "HEAD invalido. Esperado: $PinnedCommit; obtido: $sourceHead" }
+        $pluginRoot = Join-Path $sourceRoot $PluginRelativePath
     }
     else {
-        throw @"
-Ja existe '$projectSkills' e ela nao e uma junction.
-Para preservar seguranca, o script nao a substituiu.
-Use -Force para move-la para backup e criar o vinculo compartilhado.
-"@
+        $sourceRoot = [IO.Path]::GetFullPath($SkillsSourcePath)
+        if (-not (Test-Path -LiteralPath $sourceRoot -PathType Container)) {
+            throw "Fonte de skills nao encontrada: $sourceRoot"
+        }
+        $candidate = Join-Path $sourceRoot $PluginRelativePath
+        if (Test-Path -LiteralPath $candidate -PathType Container) { $pluginRoot = $candidate }
+        else { $pluginRoot = $sourceRoot }
+        $sourceGitRoot = if (Test-Path -LiteralPath (Join-Path $sourceRoot ".git")) { $sourceRoot } else { $null }
+        if ($null -ne $sourceGitRoot) {
+            $sourceHead = (& git -C $sourceGitRoot rev-parse HEAD 2>&1 | Out-String).Trim()
+            if ($LASTEXITCODE -ne 0 -or $sourceHead -ne $PinnedCommit) {
+                throw "A fonte local nao corresponde ao commit fixado $PinnedCommit."
+            }
+            $sourceStatus = (& git -C $sourceGitRoot status --porcelain --untracked-files=all 2>&1 | Out-String).Trim()
+            if ($LASTEXITCODE -ne 0 -or -not [string]::IsNullOrWhiteSpace($sourceStatus)) {
+                throw "A fonte Git local deve estar limpa para representar o commit oficial fixado."
+            }
+        }
+        elseif (-not $TestOnlyAllowUnverifiedSkillsSource) {
+            throw "A fonte local nao e um clone Git verificavel. O uso de fixtures exige -TestOnlyAllowUnverifiedSkillsSource."
+        }
     }
-}
-New-Item -ItemType Junction -Path $projectSkills -Target $SharedSkillsRoot | Out-Null
-Write-Ok "Skills vinculadas ao acelerador compartilhado."
 
-# Junction de common
-if (Test-Path -LiteralPath $projectCommon) {
-    if (Is-Junction $projectCommon) {
-        Remove-Item -LiteralPath $projectCommon -Force
-        Write-Ok "Junction anterior de common removida."
+    if (-not (Test-Path -LiteralPath $pluginRoot -PathType Container)) {
+        throw "Plugin powerbi-authoring nao encontrado em: $pluginRoot"
     }
-    elseif ($Force) {
-        $backup = "$projectCommon.backup-$(Get-Date -Format 'yyyyMMddHHmmss')"
-        Move-Item -LiteralPath $projectCommon -Destination $backup
-        Write-WarnMsg "Common local preservado em: $backup"
+    $claudeManifest = Assert-JsonFile (Join-Path $pluginRoot ".claude-plugin\plugin.json")
+    $githubManifest = Assert-JsonFile (Join-Path $pluginRoot ".github\plugin\plugin.json")
+    foreach ($manifest in @($claudeManifest, $githubManifest)) {
+        if ($manifest.name -ne "powerbi-authoring" -or $manifest.version -ne $PluginVersion) {
+            throw "Manifesto powerbi-authoring inesperado. Nome/version esperados: powerbi-authoring/$PluginVersion."
+        }
+        $manifestSkills = @($manifest.skills | ForEach-Object { ([string]$_).Replace('/', '\').TrimEnd('\') } | Sort-Object)
+        $expectedManifestSkills = @($ExpectedMicrosoftSkills | ForEach-Object { ".\skills\$_" } | Sort-Object)
+        if (($manifestSkills -join '|') -ne ($expectedManifestSkills -join '|')) {
+            throw "Manifesto powerbi-authoring nao declara exatamente as skills esperadas."
+        }
+    }
+    $officialMcpManifest = Assert-JsonFile (Join-Path $pluginRoot ".mcp.json")
+    $officialMcp = $officialMcpManifest.mcpServers.'powerbi-modeling-mcp'
+    if ($null -eq $officialMcp -or $officialMcp.command -ne "npx" -or
+        (@($officialMcp.args) -notcontains "@microsoft/powerbi-modeling-mcp@latest")) {
+        throw "Manifesto MCP oficial powerbi-authoring tem formato inesperado."
+    }
+
+    $sourceSkills = Join-Path $pluginRoot "skills"
+    foreach ($skillName in $ExpectedMicrosoftSkills) {
+        $skillRoot = Join-Path $sourceSkills $skillName
+        if (-not (Test-Path -LiteralPath (Join-Path $skillRoot "SKILL.md") -PathType Leaf)) {
+            throw "Skill Microsoft obrigatoria ausente ou invalida: $skillName"
+        }
+        Assert-SkillMetadata $skillRoot $skillName
+    }
+    $actualSkills = @(Get-ChildItem -LiteralPath $sourceSkills -Directory | Where-Object {
+        Test-Path -LiteralPath (Join-Path $_.FullName "SKILL.md") -PathType Leaf
+    } | Select-Object -ExpandProperty Name)
+    foreach ($skillName in $actualSkills) {
+        if ($ExpectedMicrosoftSkills -notcontains $skillName) {
+            throw "Skill inesperada no plugin powerbi-authoring fixado: $skillName"
+        }
+    }
+    $sourceCommon = Join-Path $pluginRoot "common"
+    foreach ($commonFile in $RequiredCommonFiles) {
+        if (-not (Test-Path -LiteralPath (Join-Path $sourceCommon $commonFile) -PathType Leaf)) {
+            throw "Arquivo common obrigatorio ausente: $commonFile"
+        }
+    }
+
+    Write-Step "Montando payload transacional"
+    $payloadSkills = Join-Path $PayloadRoot "skills"
+    Ensure-Directory $payloadSkills
+    foreach ($skillName in $ExpectedMicrosoftSkills) {
+        Copy-Item -LiteralPath (Join-Path $sourceSkills $skillName) -Destination $payloadSkills -Recurse -Force
+    }
+    foreach ($skillName in $BundledCustomSkills) {
+        $customSource = Join-Path $BundleRoot "skills\$skillName"
+        if (-not (Test-Path -LiteralPath (Join-Path $customSource "SKILL.md") -PathType Leaf)) {
+            throw "Skill customizada empacotada ausente: $skillName"
+        }
+        Assert-SkillMetadata $customSource $skillName
+        Copy-Item -LiteralPath $customSource -Destination $payloadSkills -Recurse -Force
+    }
+    Copy-DirectoryContents $sourceCommon (Join-Path $PayloadRoot "common")
+    Copy-Item -LiteralPath $pluginRoot -Destination (Join-Path $PayloadRoot "vendor\powerbi-authoring") -Recurse -Force
+
+    Ensure-Directory (Join-Path $PayloadRoot "bin")
+    foreach ($scriptName in @("Start-PowerBI-OpenCode.ps1", "Test-PowerBI-OpenCodeAccelerator.ps1", "Restore-PowerBI-OpenCodeAccelerator.ps1")) {
+        $scriptSource = Join-Path $BundleRoot "bin\$scriptName"
+        if (-not (Test-Path -LiteralPath $scriptSource -PathType Leaf)) { throw "Script empacotado ausente: $scriptSource" }
+        Assert-PowerShellSyntax $scriptSource
+        Copy-Item -LiteralPath $scriptSource -Destination (Join-Path $PayloadRoot "bin\$scriptName") -Force
+    }
+    Copy-Item -LiteralPath (Join-Path $BundleRoot "bin\pbi-ai.cmd") -Destination (Join-Path $PayloadRoot "bin\pbi-ai.cmd") -Force
+    Copy-Item -LiteralPath (Join-Path $BundleRoot "Restore-PowerBI-OpenCodeAccelerator.ps1") -Destination (Join-Path $PayloadRoot "Restore-PowerBI-OpenCodeAccelerator.ps1") -Force
+    Ensure-Directory (Join-Path $PayloadRoot "templates")
+    Copy-Item -LiteralPath (Join-Path $BundleRoot "templates\AGENTS.md") -Destination (Join-Path $PayloadRoot "templates\AGENTS.md") -Force
+
+    $payloadNode = Join-Path $PayloadRoot "node"
+    Ensure-Directory $payloadNode
+    Copy-Item -LiteralPath (Join-Path $BundleRoot "node\package.json") -Destination (Join-Path $payloadNode "package.json") -Force
+    Copy-Item -LiteralPath (Join-Path $BundleRoot "node\package-lock.json") -Destination (Join-Path $payloadNode "package-lock.json") -Force
+    $package = Assert-JsonFile (Join-Path $payloadNode "package.json")
+    $lock = Read-JsonDictionary (Join-Path $payloadNode "package-lock.json")
+    $requiredPackages = [ordered]@{
+        "@microsoft/powerbi-report-authoring-cli" = "0.5.0"
+        "@microsoft/powerbi-desktop-bridge-cli" = "1.0.0"
+        "@microsoft/powerbi-modeling-mcp" = "1.0.0"
+    }
+    foreach ($packageName in $requiredPackages.Keys) {
+        if ($package.dependencies.$packageName -ne $requiredPackages[$packageName]) {
+            throw "Versao incorreta em package.json para $packageName."
+        }
+        if ($lock["packages"][""]["dependencies"][$packageName] -ne $requiredPackages[$packageName]) {
+            throw "Versao incorreta em package-lock.json para $packageName."
+        }
+    }
+
+    Assert-MarkdownDependencies $payloadSkills $PayloadRoot
+    if (-not $SkipNpmInstall) {
+        Write-Step "Instalando dependencias npm no staging"
+        & npm ci --prefix $payloadNode --no-audit --no-fund
+        if ($LASTEXITCODE -ne 0) { throw "npm ci falhou com codigo $LASTEXITCODE." }
+        foreach ($packageName in $requiredPackages.Keys) {
+            $installedManifest = Join-Path $payloadNode ("node_modules\" + $packageName + "\package.json")
+            $installed = Assert-JsonFile $installedManifest
+            if ($installed.version -ne $requiredPackages[$packageName]) {
+                throw "npm instalou versao inesperada de ${packageName}: $($installed.version)"
+            }
+        }
     }
     else {
-        throw "Ja existe '$projectCommon' e nao e uma junction. Use -Force para substituir."
+        Write-WarnMessage "npm ci ignorado; o payload de metadados continua validado."
     }
-}
-if (Test-Path -LiteralPath $SharedCommonRoot) {
-    New-Item -ItemType Junction -Path $projectCommon -Target $SharedCommonRoot | Out-Null
-    Write-Ok "Common vinculado ao acelerador compartilhado."
-}
-else {
-    Write-WarnMsg "Diretorio common nao encontrado. Referencias em skills podem falhar."
-}
 
-$agentsTarget = Join-Path $ProjectPath "AGENTS.md"
-$agentsSource = Join-Path $TemplateRoot "AGENTS.md"
-if (-not (Test-Path -LiteralPath $agentsTarget) -or $Force) {
-    Copy-Item -LiteralPath $agentsSource -Destination $agentsTarget -Force
-    Write-Ok "AGENTS.md preparado."
-}
-else {
-    Write-WarnMsg "AGENTS.md existente preservado."
-}
-
-$docs = Join-Path $ProjectPath "docs"
-$prompts = Join-Path $ProjectPath "prompts"
-Ensure-Dir $docs
-Ensure-Dir $prompts
-
-$diagnosticPrompt = @'
-Analise este projeto Power BI PBIP sem alterar arquivos.
-
-Trabalhe somente com os arquivos locais. Nao use Power BI Service, Fabric, MCP remoto,
-OAuth ou publicacao.
-
-Use as skills de planejamento, design e autoria quando aplicavel.
-
-Entregue:
-1. Paginas e visuais existentes.
-2. Tabelas, medidas e colunas usadas.
-3. Filtros de relatorio, pagina e visual.
-4. Riscos de DAX, granularidade, relacionamentos e performance.
-5. Problemas de UX e melhorias possiveis.
-6. Priorizacao de alto, medio e baixo impacto.
-
-Nao implemente nada ainda.
-'@
-Write-FileUtf8NoBom (Join-Path $prompts "01-diagnostico-local.md") $diagnosticPrompt -Overwrite:$Force
-
-$shortcutPs1 = Join-Path $ProjectPath "Abrir-PowerBI-OpenCode.ps1"
-$shortcutPs1Content = (Get-Content -LiteralPath (Join-Path $TemplateRoot "Abrir-PowerBI-OpenCode.ps1.template") -Raw)
-Write-FileUtf8NoBom $shortcutPs1 $shortcutPs1Content -Overwrite:$Force
-
-$shortcutCmd = Join-Path $ProjectPath "Abrir-PowerBI-OpenCode.cmd"
-$shortcutCmdContent = @"
-@echo off
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Abrir-PowerBI-OpenCode.ps1" %*
-"@
-Write-FileUtf8NoBom $shortcutCmd $shortcutCmdContent -Overwrite:$Force
-
-$gitIgnore = Join-Path $ProjectPath ".gitignore"
-$ignoreEntries = @(
-    "# Gerado localmente pelo acelerador Power BI/OpenCode",
-    "screenshots/",
-    ""
-) -join [Environment]::NewLine
-if (-not (Test-Path -LiteralPath $gitIgnore)) {
-    Write-FileUtf8NoBom $gitIgnore $ignoreEntries -Overwrite:$false
-}
-else {
-    $current = Get-Content -LiteralPath $gitIgnore -Raw
-    if ($current -notmatch [regex]::Escape("screenshots/")) {
-        Add-Content -LiteralPath $gitIgnore -Value ("`r`n" + $ignoreEntries) -Encoding UTF8
-        Write-Ok ".gitignore atualizado."
+    $oldInventory = Get-Inventory
+    $oldManagedFiles = if ($null -eq $oldInventory) { @() } else { @($oldInventory.managedFiles | ForEach-Object { [string]$_ }) }
+    $newManagedFiles = @(Get-ChildItem -LiteralPath $PayloadRoot -File -Recurse -Force | ForEach-Object {
+        Get-RelativePath $PayloadRoot $_.FullName
+    })
+    if ($SkipNpmInstall) {
+        $existingNodeModules = Join-Path $InstallRoot "node\node_modules"
+        if (Test-Path -LiteralPath $existingNodeModules -PathType Container) {
+            foreach ($packageName in $requiredPackages.Keys) {
+                $existingManifest = Join-Path $existingNodeModules ("$packageName\package.json")
+                $existingPackage = Assert-JsonFile $existingManifest
+                if ($existingPackage.version -ne $requiredPackages[$packageName]) {
+                    throw "-SkipNpmInstall recusado: $packageName instalado em versao diferente de $($requiredPackages[$packageName])."
+                }
+            }
+            foreach ($existingNodeFile in @(Get-ChildItem -LiteralPath $existingNodeModules -File -Recurse -Force)) {
+                $newManagedFiles += Get-RelativePath $InstallRoot $existingNodeFile.FullName
+            }
+        }
+        foreach ($oldPath in $oldManagedFiles) {
+            if ($oldPath -like "node\node_modules\*") {
+                $existing = Resolve-SafeRelativePath $InstallRoot $oldPath
+                if (Test-Path -LiteralPath $existing -PathType Leaf) { $newManagedFiles += $oldPath }
+            }
+        }
     }
+    $newManagedFiles += "managed-inventory.json"
+    $newManagedFiles = @($newManagedFiles | Sort-Object -Unique)
+    $inventory = [ordered]@{
+        schemaVersion = 1
+        acceleratorVersion = "2.0.0"
+        source = [ordered]@{
+            repository = $RepositoryUrl
+            commit = if ($sourceWasCloned -or $null -ne $sourceGitRoot) { $PinnedCommit } else { $null }
+            tag = if ($sourceWasCloned -or $null -ne $sourceGitRoot) { "v0.3.19" } else { $null }
+            fixture = (-not $sourceWasCloned -and $null -eq $sourceGitRoot)
+            plugin = "powerbi-authoring"
+            pluginVersion = $PluginVersion
+        }
+        managedFiles = $newManagedFiles
+    }
+    Write-Utf8NoBom (Join-Path $PayloadRoot "managed-inventory.json") ($inventory | ConvertTo-Json -Depth 8)
+
+    $obsoleteMigrationRoots = @(
+        "skills\powerbi-report-authoring",
+        "skills\powerbi-report-design",
+        "skills\powerbi-report-management",
+        "skills\powerbi-report-planning",
+        "vendor\skills-for-fabric"
+    )
+    $migrationRoots = @($obsoleteMigrationRoots) + @(
+        "vendor\powerbi-authoring",
+        "templates\Abrir-PowerBI-OpenCode.ps1.template"
+    )
+    if (-not $SkipNpmInstall) { $migrationRoots += "node" }
+    $legacyManagedRoots = @($migrationRoots) + @(
+        "skills\semantic-model-authoring",
+        "skills\rode-o-bpa",
+        "skills\check-updates",
+        "common\COMMON-CORE.md",
+        "common\COMMON-CLI.md",
+        "common\ITEM-DEFINITIONS-CORE.md",
+        "bin\Start-PowerBI-OpenCode.ps1",
+        "bin\pbi-ai.cmd",
+        "templates\AGENTS.md",
+        "templates\Abrir-PowerBI-OpenCode.ps1.template",
+        "Restore-PowerBI-OpenCodeAccelerator.ps1"
+    )
+    $oldManagedSet = New-Object 'Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($relative in $oldManagedFiles) { [void]$oldManagedSet.Add($relative) }
+    $collisions = @()
+    foreach ($relative in $newManagedFiles) {
+        $destination = Resolve-SafeRelativePath $InstallRoot $relative
+        $source = Resolve-SafeRelativePath $PayloadRoot $relative
+        $typeCollision = (Test-Path -LiteralPath $destination -PathType Container) -and (Test-Path -LiteralPath $source -PathType Leaf)
+        if ((Test-Path -LiteralPath $destination) -and ($typeCollision -or
+            (-not $oldManagedSet.Contains($relative) -and -not (Test-IsUnderRelativeRoot $relative $legacyManagedRoots)))) {
+            $collisions += $relative
+        }
+    }
+    if ($collisions.Count -gt 0 -and -not $Force) {
+        throw "A instalacao preservou arquivos nao gerenciados que colidem com o payload: $($collisions -join ', '). Revise-os ou execute com -Force para preserva-los no backup e substituir os destinos."
+    }
+    if ($collisions.Count -gt 0) {
+        Write-WarnMessage "-Force autorizado: arquivos em colisao serao preservados no backup antes da substituicao."
+    }
+
+    Write-Step "Criando backup e aplicando payload"
+    Ensure-Directory $InstallRoot
+    $backupRoot = Join-Path $InstallRoot ("backups\" + (Get-Date -Format "yyyyMMdd-HHmmssfff") + "-" + [Guid]::NewGuid().ToString("N").Substring(0, 8))
+    $backupPayload = Join-Path $backupRoot "files"
+    Ensure-Directory $backupPayload
+
+    $affected = New-Object 'Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($relative in $oldManagedFiles) { Add-ExistingFiles $affected $relative }
+    foreach ($relative in $migrationRoots) { Add-ExistingFiles $affected $relative }
+    foreach ($relative in $newManagedFiles) { Add-ExistingFiles $affected $relative }
+
+    $previousFiles = @()
+    foreach ($relative in @($affected | Sort-Object)) {
+        $source = Resolve-SafeRelativePath $InstallRoot $relative
+        $backupRelative = Join-Path "files" $relative
+        $destination = Resolve-SafeRelativePath $backupRoot $backupRelative
+        Ensure-Directory (Split-Path -Parent $destination)
+        Copy-Item -LiteralPath $source -Destination $destination -Force
+        $previousFiles += [ordered]@{ path = $relative; backupPath = $backupRelative }
+    }
+    $backupManifest = [ordered]@{
+        schemaVersion = 1
+        createdUtc = [DateTime]::UtcNow.ToString("o")
+        installRoot = $InstallRoot
+        installedFiles = $newManagedFiles
+        previousFiles = $previousFiles
+    }
+    Write-Utf8NoBom (Join-Path $backupRoot "backup-manifest.json") ($backupManifest | ConvertTo-Json -Depth 8)
+    $commitStarted = $true
+
+    foreach ($relative in $migrationRoots) {
+        $target = Resolve-SafeRelativePath $InstallRoot $relative
+        if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Recurse -Force }
+    }
+    foreach ($relative in $oldManagedFiles) {
+        if ($newManagedFiles -notcontains $relative) {
+            $target = Resolve-SafeRelativePath $InstallRoot $relative
+            if (Test-Path -LiteralPath $target -PathType Leaf) { Remove-Item -LiteralPath $target -Force }
+        }
+    }
+
+    $appliedCount = 0
+    foreach ($relative in $newManagedFiles) {
+        $source = Resolve-SafeRelativePath $PayloadRoot $relative
+        if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+            if ($SkipNpmInstall -and $relative -like "node\node_modules\*") { continue }
+            throw "Arquivo do payload ausente durante aplicacao: $relative"
+        }
+        $destination = Resolve-SafeRelativePath $InstallRoot $relative
+        Ensure-Directory (Split-Path -Parent $destination)
+        if (Test-Path -LiteralPath $destination -PathType Container) {
+            Remove-Item -LiteralPath $destination -Recurse -Force
+        }
+        Copy-Item -LiteralPath $source -Destination $destination -Force
+        $appliedCount++
+        if ($TestOnlyFailAfterApplyCount -gt 0 -and $appliedCount -ge $TestOnlyFailAfterApplyCount) {
+            throw "Falha de aplicacao solicitada por switch exclusivo de teste."
+        }
+    }
+
+    Write-Step "Instalacao concluida"
+    Write-Ok "Acelerador instalado em: $InstallRoot"
+    Write-Ok "Microsoft skills-for-fabric fixado em v0.3.19 ($PinnedCommit)."
+    Write-Host "Backup mantido em: $backupRoot"
+    Write-Host "Rollback: & `"$(Join-Path $InstallRoot 'Restore-PowerBI-OpenCodeAccelerator.ps1')`" -InstallRoot `"$InstallRoot`" -BackupPath `"$backupRoot`""
 }
-
-if ($OpenDesktop -and $pbip) {
-    Write-Step "Abrindo projeto no Power BI Desktop"
-    Start-Process -FilePath $pbip.FullName
+catch {
+    if ($commitStarted -and $null -ne $backupManifest -and $null -ne $backupRoot) {
+        try {
+            Restore-BackupInProcess $backupManifest $backupRoot
+            Write-WarnMessage "Falha durante aplicacao; rollback automatico concluido."
+            Write-Host "Rollback manual: & `"$(Join-Path $InstallRoot 'Restore-PowerBI-OpenCodeAccelerator.ps1')`" -InstallRoot `"$InstallRoot`" -BackupPath `"$backupRoot`""
+        }
+        catch {
+            Write-Error "Rollback automatico falhou: $($_.Exception.Message)"
+        }
+    }
+    throw
 }
-
-Write-Step "Pronto"
-Write-Host "Projeto: $ProjectPath"
-Write-Host "Skills:  $projectSkills"
-Write-Host "Common:  $projectCommon"
-Write-Host "Atalho:  $shortcutCmd"
-Write-Host ""
-Write-Host "Modo local: sem Power BI Service, Fabric, OAuth ou Power BI Remote MCP." -ForegroundColor Green
-Write-Host "CLIs disponiveis somente nesta sessao: powerbi-report-author e powerbi-desktop"
-
-if ($InitializeOnly) {
-    Write-Host "`nInicializacao concluida. Para abrir depois, execute:"
-    Write-Host "  .\Abrir-PowerBI-OpenCode.ps1"
-    exit 0
+finally {
+    if (Test-Path -LiteralPath $StageRoot) { Remove-Item -LiteralPath $StageRoot -Recurse -Force -ErrorAction SilentlyContinue }
 }
-
-Set-Location $ProjectPath
-& opencode
-'@
-
-Write-FileUtf8NoBom (Join-Path $BinRoot "Start-PowerBI-OpenCode.ps1") $projectStarter -Overwrite:$true
-
-$cmdStarter = @'
-@echo off
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Start-PowerBI-OpenCode.ps1" -ProjectPath "%CD%" %*
-'@
-Write-FileUtf8NoBom (Join-Path $BinRoot "pbi-ai.cmd") $cmdStarter -Overwrite:$true
-
-# Template tem caminho resolvido no momento da instalacao.
-$shortcutPs1Resolved = $shortcutPs1Template.Replace("__ACCELERATOR_ROOT__", $InstallRoot.Replace("'", "''"))
-Write-FileUtf8NoBom (Join-Path $TemplateRoot "Abrir-PowerBI-OpenCode.ps1.template") $shortcutPs1Resolved -Overwrite:$true
-
-# ---------------------------------------------------------------------------
-# Resultado
-# ---------------------------------------------------------------------------
-Write-Step "Instalacao concluida"
-Write-Host "Acelerador: $InstallRoot" -ForegroundColor Green
-Write-Host "Commit Microsoft fixado: $PinnedCommit" -ForegroundColor Green
-Write-Host "Starter:    $BinRoot\Start-PowerBI-OpenCode.ps1"
-Write-Host ""
-Write-Host "Para preparar um projeto PBIP:" -ForegroundColor Cyan
-Write-Host "  cd C:\caminho\do\projeto"
-Write-Host "  & `"$BinRoot\Start-PowerBI-OpenCode.ps1`" -ProjectPath ."
-Write-Host ""
-Write-Host "Apos a primeira vez, use o atalho criado no proprio projeto:"
-Write-Host "  Abrir-PowerBI-OpenCode.cmd"

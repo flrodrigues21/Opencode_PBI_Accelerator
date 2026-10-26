@@ -1,0 +1,8 @@
+{
+  "name": "powerbi-authoring",
+  "version": "0.3.19",
+  "skills": [
+    "./skills/powerbi-report-cli",
+    "./skills/semantic-model-authoring"
+  ]
+}

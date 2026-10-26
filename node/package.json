@@ -1,6 +1,7 @@
 {
   "dependencies": {
-    "@microsoft/powerbi-desktop-bridge-cli": "0.1.1",
-    "@microsoft/powerbi-report-authoring-cli": "0.1.1"
+    "@microsoft/powerbi-desktop-bridge-cli": "1.0.0",
+    "@microsoft/powerbi-modeling-mcp": "1.0.0",
+    "@microsoft/powerbi-report-authoring-cli": "0.5.0"
   }
 }
