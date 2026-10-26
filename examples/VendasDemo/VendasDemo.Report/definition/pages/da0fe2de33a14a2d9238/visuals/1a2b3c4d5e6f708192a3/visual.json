@@ -1,5 +1,5 @@
 {
-  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.9.0/schema.json",
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.14.0/schema.json",
   "name": "1a2b3c4d5e6f708192a3",
   "position": { "x": 920, "y": 16, "z": 2000, "height": 80, "width": 160, "tabOrder": 100 },
   "visual": {
@@ -10,7 +10,8 @@
           "projections": [{
             "field": { "Column": { "Expression": { "SourceRef": { "Entity": "DimCalendario" } }, "Property": "MesAno" } },
             "queryRef": "DimCalendario.MesAno",
-            "nativeQueryRef": "MesAno"
+            "nativeQueryRef": "MesAno",
+            "active": true
           }]
         }
       }

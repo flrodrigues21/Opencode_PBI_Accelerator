@@ -1,4 +1,2 @@
-database VendasDemo
+database
 	compatibilityLevel: 1702
-	compatibilityMode: powerBI
-	language: 1046

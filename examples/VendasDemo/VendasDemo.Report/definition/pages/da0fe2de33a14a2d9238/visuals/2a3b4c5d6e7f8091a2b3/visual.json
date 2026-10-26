@@ -1,5 +1,5 @@
 {
-  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.9.0/schema.json",
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.14.0/schema.json",
   "name": "2a3b4c5d6e7f8091a2b3",
   "position": { "x": 1096, "y": 16, "z": 3000, "height": 80, "width": 160, "tabOrder": 200 },
   "visual": {
@@ -10,7 +10,8 @@
           "projections": [{
             "field": { "Column": { "Expression": { "SourceRef": { "Entity": "DimProduto" } }, "Property": "Categoria" } },
             "queryRef": "DimProduto.Categoria",
-            "nativeQueryRef": "Categoria"
+            "nativeQueryRef": "Categoria",
+            "active": true
           }]
         }
       }

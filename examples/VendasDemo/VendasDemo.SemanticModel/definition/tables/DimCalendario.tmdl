@@ -1,64 +1,71 @@
 table DimCalendario
+	lineageTag: 54de167f-3462-48aa-b2f5-c72b6808f444
 	dataCategory: Time
 
 	column Data
 		dataType: dateTime
 		isKey
 		formatString: dd/MM/yyyy
+		lineageTag: a4b96d59-19e3-4164-93de-96cf30ca10c2
 		summarizeBy: none
 		sourceColumn: Data
 
 	column Ano
 		dataType: int64
 		formatString: 0
+		lineageTag: a91112fa-0d44-46ae-95e3-82d3f0631541
 		summarizeBy: none
 		sourceColumn: Ano
 
 	column MesNumero
 		dataType: int64
-		formatString: 0
 		isHidden
+		formatString: 0
+		lineageTag: a45b5e85-9d3b-4a82-9996-5cd90e136bf9
 		summarizeBy: none
 		sourceColumn: MesNumero
 
 	column Mes
 		dataType: string
-		sortByColumn: MesNumero
+		lineageTag: 89cab520-1556-421a-800e-439d79718034
 		summarizeBy: none
 		sourceColumn: Mes
+		sortByColumn: MesNumero
 
 	column MesAno
 		dataType: string
-		sortByColumn: MesOrdem
+		lineageTag: 2fa093ea-bd8d-4ef6-baa4-c13ae87a965f
 		summarizeBy: none
 		sourceColumn: MesAno
+		sortByColumn: MesOrdem
 
 	column MesOrdem
 		dataType: int64
-		formatString: 0
 		isHidden
+		formatString: 0
+		lineageTag: 6ca15de7-c818-4e35-a85a-2636453871e7
 		summarizeBy: none
 		sourceColumn: MesOrdem
 
 	partition DimCalendario = m
 		mode: import
 		source =
-			let
-				Datas = List.Dates(#date(2026, 1, 1), 90, #duration(1, 0, 0, 0)),
-				Linhas = List.Transform(
-					Datas,
-					each {
-						_,
-						Date.Year(_),
-						Date.Month(_),
-						Text.Proper(Date.ToText(_, "MMM", "pt-BR")),
-						Text.Proper(Date.ToText(_, "MMM/yyyy", "pt-BR")),
-						Date.Year(_) * 100 + Date.Month(_)
-					}
-				),
-				Source = #table(
-					type table [Data = date, Ano = Int64.Type, MesNumero = Int64.Type, Mes = text, MesAno = text, MesOrdem = Int64.Type],
-					Linhas
-				)
-			in
-				Source
+				let
+					Datas = List.Dates(#date(2026, 1, 1), 90, #duration(1, 0, 0, 0)),
+					Linhas = List.Transform(
+						Datas,
+						each {
+							_,
+							Date.Year(_),
+							Date.Month(_),
+							Text.Proper(Date.ToText(_, "MMM", "pt-BR")),
+							Text.Proper(Date.ToText(_, "MMM/yyyy", "pt-BR")),
+							Date.Year(_) * 100 + Date.Month(_)
+						}
+					),
+					Source = #table(
+						type table [Data = date, Ano = Int64.Type, MesNumero = Int64.Type, Mes = text, MesAno = text, MesOrdem = Int64.Type],
+						Linhas
+					)
+				in
+					Source

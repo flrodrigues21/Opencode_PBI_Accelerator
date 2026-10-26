@@ -1,47 +1,53 @@
 table DimProduto
+	lineageTag: e6be85dc-dd6c-456a-8132-55ca9639f070
 
 	column ProdutoId
 		dataType: int64
 		isHidden
 		isKey
+		lineageTag: 585643c0-491a-4f2c-b7ce-8e26cc776ff5
 		summarizeBy: none
 		sourceColumn: ProdutoId
 
 	column Produto
 		dataType: string
+		lineageTag: f913567e-8b40-44be-b94b-bc7179ff97f9
 		summarizeBy: none
 		sourceColumn: Produto
 
 	column Categoria
 		dataType: string
+		lineageTag: d5a37a6f-66ef-4b53-920d-6101213e8aef
 		summarizeBy: none
 		sourceColumn: Categoria
 
 	column PrecoUnitario
 		dataType: decimal
-		formatString: R$ #,##0.00
 		isHidden
+		formatString: R$ #,##0.00
+		lineageTag: 2d4b9fda-8047-4b58-97f3-1fdb8667237d
 		summarizeBy: none
 		sourceColumn: PrecoUnitario
 
 	column CustoUnitario
 		dataType: decimal
-		formatString: R$ #,##0.00
 		isHidden
+		formatString: R$ #,##0.00
+		lineageTag: 67dae117-fce5-45aa-97b8-c68c55a0b5e0
 		summarizeBy: none
 		sourceColumn: CustoUnitario
 
 	partition DimProduto = m
 		mode: import
 		source =
-			#table(
-				type table [ProdutoId = Int64.Type, Produto = text, Categoria = text, PrecoUnitario = Currency.Type, CustoUnitario = Currency.Type],
-				{
-					{1, "Notebook Pro", "Tecnologia", Currency.From(5200), Currency.From(3900)},
-					{2, "Monitor 27 polegadas", "Tecnologia", Currency.From(1450), Currency.From(980)},
-					{3, "Cadeira Ergonomica", "Escritorio", Currency.From(1850), Currency.From(1200)},
-					{4, "Mesa Ajustavel", "Escritorio", Currency.From(2400), Currency.From(1650)},
-					{5, "Headset", "Acessorios", Currency.From(480), Currency.From(290)},
-					{6, "Webcam", "Acessorios", Currency.From(620), Currency.From(370)}
-				}
-			)
+				#table(
+					type table [ProdutoId = Int64.Type, Produto = text, Categoria = text, PrecoUnitario = Currency.Type, CustoUnitario = Currency.Type],
+					{
+						{1, "Notebook Pro", "Tecnologia", Currency.From(5200), Currency.From(3900)},
+						{2, "Monitor 27 polegadas", "Tecnologia", Currency.From(1450), Currency.From(980)},
+						{3, "Cadeira Ergonomica", "Escritorio", Currency.From(1850), Currency.From(1200)},
+						{4, "Mesa Ajustavel", "Escritorio", Currency.From(2400), Currency.From(1650)},
+						{5, "Headset", "Acessorios", Currency.From(480), Currency.From(290)},
+						{6, "Webcam", "Acessorios", Currency.From(620), Currency.From(370)}
+					}
+				)

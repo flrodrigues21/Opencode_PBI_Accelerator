@@ -3,6 +3,8 @@ model Model
 	defaultPowerBIDataSourceVersion: powerBI_V3
 	sourceQueryCulture: pt-BR
 
+annotation PBI_ProTooling = ["DevMode"]
+
 ref table DimProduto
 ref table DimCalendario
 ref table FatoVendas
