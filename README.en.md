@@ -9,6 +9,7 @@ Independent accelerator for Power BI PBIP/PBIR/TMDL projects in OpenCode. The de
 | Layer | Purpose | Default |
 |---|---|---|
 | Skills | Markdown instructions discovered by OpenCode | Enabled |
+| `/demo-powerbi` command | Creates an independent copy of the bundled demo | Enabled |
 | npm CLIs | PBIR authoring/validation and Desktop bridge | Installed locally |
 | Power BI Modeling MCP | Modeling tools for Desktop/local models | Disabled; opt-in |
 
@@ -33,6 +34,34 @@ The local workflow requires Windows PowerShell 5.1+, Git, Node.js 20+ with npm, 
 
 Azure CLI, Azure login, Fabric capacity/license, workspaces, and Power BI Service are not required for the file-only workflow. They apply only to optional cloud scenarios outside the default scope.
 
+## Quick Start: Clone And Request A Demo
+
+Actual prerequisites: Windows PowerShell 5.1+, Git, Node.js 20+ with npm, and OpenCode. Power BI Desktop is required only to open and visually inspect the report. Installation uses network access for Git/npm, and OpenCode needs network access when configured with a cloud LLM provider. Azure, Fabric, Power BI Service, customer credentials, and gateways are not required.
+
+In PowerShell:
+
+```powershell
+git clone https://github.com/flrodrigues21/Opencode_PBI_Accelerator.git
+Set-Location ".\Opencode_PBI_Accelerator"
+Set-ExecutionPolicy -Scope Process Bypass
+& ".\Install-PowerBI-OpenCodeAccelerator.ps1" -InstallRoot "C:\OpenCode\PowerBI-Accelerator"
+& "C:\OpenCode\PowerBI-Accelerator\bin\Start-PowerBI-OpenCode.ps1" -InstallRoot "C:\OpenCode\PowerBI-Accelerator" -ProjectPath (Get-Location).Path
+```
+
+In OpenCode, run `/demo-powerbi`. Without an argument, the safe destination is `VendasDemo-Demo` under the current directory; if it already exists, the command asks for another path and never overwrites it. You can also provide a new destination:
+
+```text
+/demo-powerbi "C:\Power BI Demos\My VendasDemo"
+```
+
+Or use this ready-made prompt:
+
+> Crie uma demo Power BI do zero com dados fictícios, usando o exemplo VendasDemo e as skills deste acelerador. Prepare uma cópia independente, valide os arquivos e me diga qual PBIP abrir.
+
+The canonical source is [`examples/VendasDemo`](examples/VendasDemo). The copy contains 120 sales and expects 360 units, R$720,000.00 revenue, R$503,400.00 cost, R$216,600.00 profit, and a 30.0833% margin. The command validates files, relative references, and totals; when the CLI is installed, it also validates PBIR. It does not claim model loading or visual validation.
+
+Open the reported `VendasDemo.pbip` in Power BI Desktop. Because the copy does not distribute a local cache, Desktop may initially show empty tables; if so, perform one manual refresh, inspect the `Visão Geral` page, and save. All data is fictional and self-contained in Power Query M `#table` expressions: no external sources, customer data, credentials, cloud resources, or publishing are used.
+
 ## Install Or Update
 
 ```powershell
@@ -50,7 +79,7 @@ Backups are stored under `<InstallRoot>\backups`. Restore the latest one with:
 
 ## OpenCode And MCP
 
-The bootstrap creates `.opencode\skills` and `.opencode\common` junctions so relative `../../common/...` references remain valid. Existing `AGENTS.md`, `opencode.json`, `opencode.jsonc`, and JSONC comments are preserved.
+OpenCode discovers skills under `.opencode\skills` and commands under `.opencode\commands`. The repository exposes `/demo-powerbi` directly; the bootstrap copies it into prepared projects only when no same-name command exists. Custom commands are never replaced. Junctions are used only for `.opencode\skills` and `.opencode\common`, so relative `../../common/...` references remain valid. Existing `AGENTS.md`, `opencode.json`, `opencode.jsonc`, and JSONC comments are preserved.
 
 ### Backend-First Execution
 
@@ -70,6 +99,12 @@ Prepare and open a project:
 
 ```powershell
 & "C:\OpenCode\PowerBI-Accelerator\bin\Start-PowerBI-OpenCode.ps1" -InstallRoot "C:\OpenCode\PowerBI-Accelerator" -ProjectPath "C:\path\Project"
+```
+
+The same backend used by `/demo-powerbi` can create a demo without entering OpenCode. The destination must be new:
+
+```powershell
+& "C:\OpenCode\PowerBI-Accelerator\bin\Test-PowerBI-OpenCodeAccelerator.ps1" -InstallRoot "C:\OpenCode\PowerBI-Accelerator" -ProjectPath (Get-Location).Path -PrepareDemo -DemoDestination "C:\Power BI Demos\My VendasDemo"
 ```
 
 OpenCode does not automatically import another client's `.mcp.json`. To opt into the pinned local Modeling MCP for one OpenCode invocation:
@@ -121,6 +156,7 @@ Tests use fixtures and temporary directories, never user reports. Live Desktop a
 - <https://github.com/microsoft/skills-for-fabric>
 - <https://github.com/microsoft/powerbi-modeling-mcp>
 - <https://opencode.ai/docs/skills/>
+- <https://opencode.ai/docs/commands/>
 - <https://opencode.ai/docs/mcp-servers/>
 
 ## Licenses

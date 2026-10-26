@@ -6,6 +6,8 @@ param(
     [string]$ProjectPath = (Get-Location).Path,
     [switch]$PrepareCopy,
     [string]$CopyDestination,
+    [switch]$PrepareDemo,
+    [string]$DemoDestination,
     [switch]$TestBridge,
     [int]$BridgeTimeoutSeconds = 5,
     [int]$BridgeAttempts = 2,
@@ -128,6 +130,135 @@ function Assert-NoReparseInExistingPath([string]$Path) {
     }
 }
 
+function Test-ContainsPrivatePath([string]$Content) {
+    return $Content -match '(?i)(?:[A-Z]:(?:\\{1,2}|/)Users(?:\\{1,2}|/)|file:(?:/{2,4}|\\{2,4})[A-Z]:(?:\\{1,2}|/)Users(?:\\{1,2}|/))'
+}
+
+function Assert-PortableDemoTree([string]$Root) {
+    $forbiddenDirectories = @('.pbi', '.opencode', 'node_modules')
+    $textExtensions = @('.json', '.md', '.pbip', '.pbir', '.pbism', '.ps1', '.tmdl')
+    $pending = New-Object 'Collections.Generic.Queue[string]'
+    $pending.Enqueue([IO.Path]::GetFullPath($Root))
+    while ($pending.Count -gt 0) {
+        $directory = $pending.Dequeue()
+        foreach ($item in @(Get-ChildItem -LiteralPath $directory -Force)) {
+            if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                throw "A demo distribuida contem junction ou link simbolico: $($item.FullName)"
+            }
+            if ($item.PSIsContainer) {
+                if ($forbiddenDirectories -contains $item.Name) {
+                    throw "A demo distribuida contem diretorio local proibido: $($item.FullName)"
+                }
+                $pending.Enqueue($item.FullName)
+                continue
+            }
+            if ($textExtensions -contains $item.Extension -or $item.Name -in @('.gitignore', '.platform')) {
+                $content = Get-Content -LiteralPath $item.FullName -Raw
+                if (Test-ContainsPrivatePath $content) {
+                    throw "A demo distribuida contem caminho privado: $($item.FullName)"
+                }
+            }
+        }
+    }
+}
+
+function Get-DemoSourceFiles([string]$Root) {
+    $inventoryPath = Join-Path $InstallRoot "managed-inventory.json"
+    if (-not (Test-Path -LiteralPath $inventoryPath -PathType Leaf)) {
+        throw "Inventario ausente para preparar a demo. Instale o acelerador e abra o OpenCode pelo launcher gerado: $inventoryPath"
+    }
+    try { $managedInventory = Get-Content -LiteralPath $inventoryPath -Raw | ConvertFrom-Json }
+    catch { throw "Inventario JSON invalido ao preparar demo: $($_.Exception.Message)" }
+    $managedPrefix = "examples\VendasDemo\"
+    $rootPrefix = [IO.Path]::GetFullPath($Root).TrimEnd('\') + '\'
+    $result = @()
+    foreach ($managedRelative in @($managedInventory.managedFiles | ForEach-Object { [string]$_ })) {
+        if (-not $managedRelative.StartsWith($managedPrefix, [StringComparison]::OrdinalIgnoreCase)) { continue }
+        $demoRelative = $managedRelative.Substring($managedPrefix.Length)
+        $segments = @($demoRelative -split '[\\/]')
+        if ([string]::IsNullOrWhiteSpace($demoRelative) -or [IO.Path]::IsPathRooted($demoRelative) -or $segments -contains '..' -or $segments -contains '.') {
+            throw "Caminho gerenciado invalido na demo: $managedRelative"
+        }
+        $source = Resolve-SafeRelativePath $InstallRoot $managedRelative
+        if (-not $source.StartsWith($rootPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+            throw "Arquivo gerenciado escapa da raiz da demo: $managedRelative"
+        }
+        if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "Arquivo gerenciado da demo ausente: $managedRelative" }
+        $result += [pscustomobject]@{ FullName = $source; RelativePath = $demoRelative }
+    }
+    if ($result.Count -eq 0) { throw "Inventario nao contem arquivos gerenciados da VendasDemo." }
+    return $result
+}
+
+function Assert-PortableDemoFiles([object[]]$Files) {
+    foreach ($file in $Files) {
+        $segments = @([string]$file.RelativePath -split '[\\/]')
+        if (@($segments | Where-Object { $_ -in @('.pbi', '.opencode', 'node_modules') }).Count -gt 0) {
+            throw "Arquivo local proibido no inventario da demo: $($file.RelativePath)"
+        }
+        $item = Get-Item -LiteralPath $file.FullName -Force
+        if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw "Arquivo gerenciado da demo e junction ou link: $($file.FullName)"
+        }
+        if ($item.Extension -in @('.json', '.md', '.pbip', '.pbir', '.pbism', '.ps1', '.tmdl') -or $item.Name -in @('.gitignore', '.platform')) {
+            $content = Get-Content -LiteralPath $item.FullName -Raw
+            if (Test-ContainsPrivatePath $content) {
+                throw "A demo distribuida contem caminho privado: $($item.FullName)"
+            }
+        }
+    }
+}
+
+function Copy-DemoFiles([object[]]$Files, [string]$Destination) {
+    Ensure-Directory $Destination
+    $destinationPrefix = [IO.Path]::GetFullPath($Destination).TrimEnd('\') + '\'
+    foreach ($file in $Files) {
+        $target = [IO.Path]::GetFullPath((Join-Path $Destination ([string]$file.RelativePath)))
+        if (-not $target.StartsWith($destinationPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+            throw "Arquivo da demo escapa do destino: $($file.RelativePath)"
+        }
+        Ensure-Directory (Split-Path -Parent $target)
+        Copy-Item -LiteralPath $file.FullName -Destination $target
+    }
+}
+
+function Invoke-ReportValidation([string]$CommandPath, [string]$PbipPath, [int]$TimeoutSeconds) {
+    $startInfo = New-Object Diagnostics.ProcessStartInfo
+    $commandExtension = [IO.Path]::GetExtension($CommandPath)
+    if ($commandExtension -in @('.cmd', '.bat')) {
+        $startInfo.FileName = $env:ComSpec
+        $escapedCommand = $CommandPath.Replace('"', '""')
+        $escapedPbip = $PbipPath.Replace('"', '""')
+        $startInfo.Arguments = "/d /s /c `"`"$escapedCommand`" validate `"$escapedPbip`" --no-schema`""
+    }
+    elseif ($commandExtension -ieq '.ps1') {
+        $startInfo.FileName = (Get-Command powershell.exe -ErrorAction Stop).Source
+        $startInfo.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$CommandPath`" validate `"$PbipPath`" --no-schema"
+    }
+    else {
+        $startInfo.FileName = $CommandPath
+        $startInfo.Arguments = "validate `"$PbipPath`" --no-schema"
+    }
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $process = New-Object Diagnostics.Process
+    $process.StartInfo = $startInfo
+    if (-not $process.Start()) { throw "Nao foi possivel iniciar a validacao PBIR." }
+    $standardOutputTask = $process.StandardOutput.ReadToEndAsync()
+    $standardErrorTask = $process.StandardError.ReadToEndAsync()
+    if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+        & taskkill.exe /PID $process.Id /T /F *> $null
+        if (-not $process.HasExited) { $process.Kill() }
+        $process.WaitForExit()
+        throw "Validacao PBIR excedeu o timeout de $TimeoutSeconds segundo(s)."
+    }
+    $output = ($standardOutputTask.Result + "`n" + $standardErrorTask.Result).Trim()
+    if ($process.ExitCode -ne 0) { throw "Validacao PBIR falhou com codigo $($process.ExitCode): $output" }
+    return $output
+}
+
 function Invoke-BridgeStatus([string]$CommandPath, [int]$TimeoutSeconds) {
     $startInfo = New-Object Diagnostics.ProcessStartInfo
     if ([IO.Path]::GetExtension($CommandPath) -ieq ".cmd" -or [IO.Path]::GetExtension($CommandPath) -ieq ".bat") {
@@ -170,6 +301,102 @@ function Invoke-BridgeStatus([string]$CommandPath, [int]$TimeoutSeconds) {
 }
 
 if (-not (Test-Path -LiteralPath $ProjectPath -PathType Container)) { throw "Projeto nao encontrado: $ProjectPath" }
+if ($PrepareCopy -and $PrepareDemo) { throw "Use somente um modo de copia por execucao." }
+if ($PrepareDemo) {
+    if (-not [string]::IsNullOrWhiteSpace($CopyDestination)) { throw "Use -DemoDestination com -PrepareDemo." }
+    $demoSource = Join-Path $InstallRoot "examples\VendasDemo"
+    if (-not (Test-Path -LiteralPath $demoSource -PathType Container)) { throw "Demo VendasDemo nao encontrada: $demoSource" }
+    if ([string]::IsNullOrWhiteSpace($DemoDestination)) { $DemoDestination = Join-Path $ProjectPath "VendasDemo-Demo" }
+    $DemoDestination = [IO.Path]::GetFullPath($DemoDestination)
+    if (Test-Path -LiteralPath $DemoDestination) { throw "O destino da demo deve ser novo: $DemoDestination" }
+    $destinationParent = Split-Path -Parent $DemoDestination
+    Assert-NoReparseInExistingPath $destinationParent
+    Ensure-Directory $destinationParent
+    Assert-NoReparseInExistingPath $destinationParent
+    $sourcePrefix = [IO.Path]::GetFullPath($demoSource).TrimEnd('\') + '\'
+    if (($DemoDestination.TrimEnd('\') + '\').StartsWith($sourcePrefix, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "O destino da demo nao pode ficar dentro do exemplo original."
+    }
+
+    Write-Host "[ETAPA 1/4] Auditando a demo distribuida"
+    $demoFiles = @(Get-DemoSourceFiles $demoSource)
+    Assert-PortableDemoFiles $demoFiles
+    $sourceSnapshot = @{}
+    foreach ($file in $demoFiles) { $sourceSnapshot[[string]$file.RelativePath] = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash }
+    $stagingDestination = Join-Path $destinationParent (".VendasDemo-stage-" + [Guid]::NewGuid().ToString("N"))
+    $stagingCreated = $false
+    try {
+        Write-Host "[ETAPA 2/4] Criando copia independente em: $DemoDestination"
+        New-Item -ItemType Directory -Path $stagingDestination -ErrorAction Stop | Out-Null
+        $stagingCreated = $true
+        Assert-NoReparseInExistingPath $stagingDestination
+        Copy-DemoFiles $demoFiles $stagingDestination
+        $copySnapshot = Get-FileSnapshot $stagingDestination
+        if ($sourceSnapshot.Count -ne $copySnapshot.Count) { throw "A copia da demo possui quantidade inesperada de arquivos." }
+        foreach ($relative in $sourceSnapshot.Keys) {
+            if (-not $copySnapshot.ContainsKey($relative) -or $copySnapshot[$relative] -ne $sourceSnapshot[$relative]) {
+                throw "A copia da demo diverge da origem: $relative"
+            }
+        }
+        Assert-PortableDemoTree $stagingDestination
+
+        Write-Host "[ETAPA 3/4] Validando estrutura e referencias relativas"
+        $pbipPath = Join-Path $stagingDestination "VendasDemo.pbip"
+        $pbip = Get-Content -LiteralPath $pbipPath -Raw | ConvertFrom-Json
+        $reportRelative = [string]$pbip.artifacts[0].report.path
+        if ([string]::IsNullOrWhiteSpace($reportRelative) -or [IO.Path]::IsPathRooted($reportRelative)) { throw "Referencia de relatorio invalida no PBIP." }
+        $reportPath = [IO.Path]::GetFullPath((Join-Path $stagingDestination $reportRelative))
+        $demoPrefix = $stagingDestination.TrimEnd('\') + '\'
+        if (-not ($reportPath + '\').StartsWith($demoPrefix, [StringComparison]::OrdinalIgnoreCase) -or -not (Test-Path -LiteralPath $reportPath -PathType Container)) {
+            throw "O PBIP referencia um relatorio fora da demo."
+        }
+        $pbirPath = Join-Path $reportPath "definition.pbir"
+        $pbir = Get-Content -LiteralPath $pbirPath -Raw | ConvertFrom-Json
+        $modelRelative = [string]$pbir.datasetReference.byPath.path
+        if ([string]::IsNullOrWhiteSpace($modelRelative) -or [IO.Path]::IsPathRooted($modelRelative)) { throw "Referencia de modelo invalida no PBIR." }
+        $modelPath = [IO.Path]::GetFullPath((Join-Path $reportPath $modelRelative))
+        if (-not ($modelPath + '\').StartsWith($demoPrefix, [StringComparison]::OrdinalIgnoreCase) -or -not (Test-Path -LiteralPath $modelPath -PathType Container)) {
+            throw "O PBIR referencia um modelo fora da demo."
+        }
+        Write-Host "[OK] PBIP e PBIR usam referencias relativas validas" -ForegroundColor Green
+
+        Write-Host "[ETAPA 4/4] Validando totais e PBIR quando a CLI estiver disponivel"
+        & (Join-Path $stagingDestination "Test-VendasDemo.ps1")
+        $reportAuthor = @(
+            (Join-Path $InstallRoot "node\node_modules\.bin\powerbi-report-author.cmd"),
+            (Join-Path $InstallRoot "node\node_modules\.bin\powerbi-report-author.exe"),
+            (Join-Path $InstallRoot "node\node_modules\.bin\powerbi-report-author")
+        ) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+        if ([string]::IsNullOrWhiteSpace($reportAuthor)) {
+            $pathCommand = Get-Command powerbi-report-author -ErrorAction SilentlyContinue
+            if ($null -ne $pathCommand) { $reportAuthor = $pathCommand.Source }
+        }
+        if ([string]::IsNullOrWhiteSpace($reportAuthor)) {
+            Write-Host "[AVISO] CLI PBIR indisponivel; validacao JSON, referencias e totais concluida." -ForegroundColor Yellow
+        }
+        else {
+            [void](Invoke-ReportValidation $reportAuthor $pbipPath 30)
+            Write-Host "[OK] PBIR validado pela CLI" -ForegroundColor Green
+        }
+        if (Test-Path -LiteralPath $DemoDestination) { throw "O destino da demo passou a existir durante a preparacao: $DemoDestination" }
+        [IO.Directory]::Move($stagingDestination, $DemoDestination)
+        $stagingCreated = $false
+        $pbipPath = Join-Path $DemoDestination "VendasDemo.pbip"
+        Write-Host "[OK] Copia independente criada sem caches ou junctions" -ForegroundColor Green
+        Write-Host "[AVISO] Bridge e MCP sao opcionais e nao foram executados; validacao visual nao executada." -ForegroundColor Yellow
+        Write-Host "[PROXIMO] PBIP para abrir: $pbipPath" -ForegroundColor Cyan
+        return
+    }
+    catch {
+        if ($stagingCreated -and (Test-Path -LiteralPath $stagingDestination -PathType Container)) {
+            Remove-Item -LiteralPath $stagingDestination -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        throw
+    }
+}
+elseif (-not [string]::IsNullOrWhiteSpace($DemoDestination)) {
+    throw "Use -PrepareDemo ao informar -DemoDestination."
+}
 if ($PrepareCopy) {
     if ([string]::IsNullOrWhiteSpace($CopyDestination)) { throw "-CopyDestination e obrigatorio com -PrepareCopy." }
     $CopyDestination = [IO.Path]::GetFullPath($CopyDestination)

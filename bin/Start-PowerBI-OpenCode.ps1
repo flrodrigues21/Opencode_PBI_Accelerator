@@ -18,6 +18,8 @@ $SharedSkills = Join-Path $InstallRoot "skills"
 $SharedCommon = Join-Path $InstallRoot "common"
 $LocalBin = Join-Path $InstallRoot "node\node_modules\.bin"
 $TemplateAgents = Join-Path $InstallRoot "templates\AGENTS.md"
+$ManagedDemoCommand = Join-Path $InstallRoot "commands\demo-powerbi.md"
+$ManagedDemo = Join-Path $InstallRoot "examples\VendasDemo\VendasDemo.pbip"
 
 function Ensure-Directory([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
@@ -68,10 +70,34 @@ function Connect-SharedDirectory([string]$ProjectDirectory, [string]$SharedDirec
     Write-Host "$Name vinculado ao acelerador." -ForegroundColor Green
 }
 
+function Copy-ProjectCommandIfMissing([string]$OpenCodeDirectory, [string]$Source) {
+    $pluralDirectory = Join-Path $OpenCodeDirectory "commands"
+    $pluralTarget = Join-Path $pluralDirectory "demo-powerbi.md"
+    if (Test-Path -LiteralPath $pluralTarget) {
+        Write-Host "Comando /demo-powerbi existente preservado." -ForegroundColor Yellow
+        return
+    }
+    if (Test-Path -LiteralPath $pluralDirectory) {
+        if (-not (Test-Path -LiteralPath $pluralDirectory -PathType Container)) {
+            throw "'.opencode\commands' nao e um diretorio."
+        }
+        if (Test-ReparsePoint $pluralDirectory) {
+            throw "'.opencode\commands' e uma junction ou link; o acelerador nao escreve em destinos externos."
+        }
+    }
+    else {
+        Ensure-Directory $pluralDirectory
+    }
+    [IO.File]::Copy($Source, $pluralTarget, $false)
+    Write-Host "Comando /demo-powerbi adicionado." -ForegroundColor Green
+}
+
 if (-not (Test-Path -LiteralPath $ProjectPath -PathType Container)) { throw "Projeto nao encontrado: $ProjectPath" }
 if (-not (Test-Path -LiteralPath $SharedSkills -PathType Container)) { throw "Skills nao encontradas: $SharedSkills" }
 if (-not (Test-Path -LiteralPath $SharedCommon -PathType Container)) { throw "Common nao encontrado: $SharedCommon" }
 if (-not (Test-Path -LiteralPath $TemplateAgents -PathType Leaf)) { throw "Template AGENTS.md nao encontrado: $TemplateAgents" }
+if (-not (Test-Path -LiteralPath $ManagedDemoCommand -PathType Leaf)) { throw "Comando /demo-powerbi nao encontrado: $ManagedDemoCommand" }
+if (-not (Test-Path -LiteralPath $ManagedDemo -PathType Leaf)) { throw "Exemplo VendasDemo nao encontrado: $ManagedDemo" }
 if (-not $InitializeOnly -and $null -eq (Get-Command opencode -ErrorAction SilentlyContinue)) {
     throw "OpenCode nao encontrado no PATH."
 }
@@ -96,10 +122,12 @@ $env:POWERBI_OPENCODE_ACCELERATOR = $InstallRoot
 
 $opencodeDirectory = Join-Path $ProjectPath ".opencode"
 if (Test-Path -LiteralPath $opencodeDirectory -PathType Leaf) { throw "'.opencode' e um arquivo; esperado diretorio." }
+if (Test-ReparsePoint $opencodeDirectory) { throw "'.opencode' e uma junction ou link; o acelerador nao escreve em destinos externos." }
 Ensure-Directory $opencodeDirectory
 $timestamp = Get-Date -Format "yyyyMMdd-HHmmssfff"
 Connect-SharedDirectory (Join-Path $opencodeDirectory "skills") $SharedSkills "Skills" $timestamp
 Connect-SharedDirectory (Join-Path $opencodeDirectory "common") $SharedCommon "Common" $timestamp
+Copy-ProjectCommandIfMissing $opencodeDirectory $ManagedDemoCommand
 
 $agentsTarget = Join-Path $ProjectPath "AGENTS.md"
 if (-not (Test-Path -LiteralPath $agentsTarget)) {
@@ -138,7 +166,7 @@ $pbip = Get-ChildItem -LiteralPath $ProjectPath -Filter "*.pbip" -File -ErrorAct
 if ($OpenDesktop -and $null -ne $pbip) { Start-Process -FilePath $pbip.FullName }
 
 if ($InitializeOnly) {
-    Write-Host "Projeto preparado. AGENTS.md e configuracoes OpenCode existentes foram preservados." -ForegroundColor Green
+    Write-Host "Projeto preparado. Comandos personalizados, AGENTS.md e configuracoes OpenCode existentes foram preservados." -ForegroundColor Green
     return
 }
 

@@ -20,6 +20,7 @@ $PluginVersion = "0.3.19"
 $PluginRelativePath = "plugins\powerbi-authoring"
 $ExpectedMicrosoftSkills = @("powerbi-report-cli", "semantic-model-authoring")
 $BundledCustomSkills = @("rode-o-bpa", "check-updates")
+$BundledCommands = @("demo-powerbi")
 $RequiredCommonFiles = @("COMMON-CORE.md", "COMMON-CLI.md", "ITEM-DEFINITIONS-CORE.md")
 $BundleRoot = $PSScriptRoot
 $InstallRoot = [IO.Path]::GetFullPath($InstallRoot)
@@ -171,6 +172,42 @@ function Assert-SkillMetadata([string]$SkillRoot, [string]$ExpectedName) {
     }
     if ($frontmatter -notmatch '(?m)^description:\s*(?:>|\|)?\s*(?:\r?\n|\S)') {
         throw "Description ausente no frontmatter: $skillFile"
+    }
+}
+
+function Assert-OpenCodeCommand([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw "Comando OpenCode ausente: $Path" }
+    $content = Get-Content -LiteralPath $Path -Raw
+    if ($content -notmatch '(?s)^---\s*\r?\n(?<frontmatter>.*?)\r?\n---\s*\r?\n(?<body>.+)$') {
+        throw "Frontmatter ou corpo ausente no comando OpenCode: $Path"
+    }
+    $frontmatter = $Matches['frontmatter']
+    $body = $Matches['body']
+    if ($frontmatter -notmatch '(?m)^description:\s*\S.+$') {
+        throw "Description ausente no comando OpenCode: $Path"
+    }
+    if ([string]::IsNullOrWhiteSpace($body)) { throw "Prompt vazio no comando OpenCode: $Path" }
+}
+
+function Assert-PortableDemoSource([string]$Root) {
+    if (-not (Test-Path -LiteralPath (Join-Path $Root "VendasDemo.pbip") -PathType Leaf)) {
+        throw "Exemplo VendasDemo invalido: VendasDemo.pbip ausente."
+    }
+    $pending = New-Object 'Collections.Generic.Queue[string]'
+    $pending.Enqueue([IO.Path]::GetFullPath($Root))
+    while ($pending.Count -gt 0) {
+        $directory = $pending.Dequeue()
+        foreach ($item in @(Get-ChildItem -LiteralPath $directory -Force)) {
+            if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                throw "Exemplo VendasDemo contem junction ou link simbolico: $($item.FullName)"
+            }
+            if ($item.PSIsContainer) {
+                if ($item.Name -in @('.pbi', '.opencode', 'node_modules')) {
+                    throw "Exemplo VendasDemo contem diretorio local proibido: $($item.FullName)"
+                }
+                $pending.Enqueue($item.FullName)
+            }
+        }
     }
 }
 
@@ -336,6 +373,18 @@ try {
     Ensure-Directory (Join-Path $PayloadRoot "templates")
     Copy-Item -LiteralPath (Join-Path $BundleRoot "templates\AGENTS.md") -Destination (Join-Path $PayloadRoot "templates\AGENTS.md") -Force
 
+    Ensure-Directory (Join-Path $PayloadRoot "commands")
+    foreach ($commandName in $BundledCommands) {
+        $commandSource = Join-Path $BundleRoot ".opencode\commands\$commandName.md"
+        Assert-OpenCodeCommand $commandSource
+        Copy-Item -LiteralPath $commandSource -Destination (Join-Path $PayloadRoot "commands\$commandName.md") -Force
+    }
+
+    $demoSource = Join-Path $BundleRoot "examples\VendasDemo"
+    Assert-PortableDemoSource $demoSource
+    Assert-PowerShellSyntax (Join-Path $demoSource "Test-VendasDemo.ps1")
+    Copy-DirectoryContents $demoSource (Join-Path $PayloadRoot "examples\VendasDemo")
+
     $payloadNode = Join-Path $PayloadRoot "node"
     Ensure-Directory $payloadNode
     Copy-Item -LiteralPath (Join-Path $BundleRoot "node\package.json") -Destination (Join-Path $payloadNode "package.json") -Force
@@ -403,7 +452,7 @@ try {
     $newManagedFiles = @($newManagedFiles | Sort-Object -Unique)
     $inventory = [ordered]@{
         schemaVersion = 1
-        acceleratorVersion = "2.0.0"
+        acceleratorVersion = "2.1.0"
         source = [ordered]@{
             repository = $RepositoryUrl
             commit = if ($sourceWasCloned -or $null -ne $sourceGitRoot) { $PinnedCommit } else { $null }
