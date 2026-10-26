@@ -1,0 +1,40 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.9.0/schema.json",
+  "name": "8a9b0c1d2e3f4567a8b9",
+  "position": { "x": 648, "y": 210, "z": 9000, "height": 230, "width": 608, "tabOrder": 800 },
+  "visual": {
+    "visualType": "clusteredColumnChart",
+    "query": {
+      "queryState": {
+        "Category": { "projections": [{
+          "field": { "Column": { "Expression": { "SourceRef": { "Entity": "DimProduto" } }, "Property": "Categoria" } },
+          "queryRef": "DimProduto.Categoria",
+          "nativeQueryRef": "Categoria",
+          "active": true
+        }] },
+        "Y": { "projections": [{
+          "field": { "Measure": { "Expression": { "SourceRef": { "Entity": "FatoVendas" } }, "Property": "Receita Total" } },
+          "queryRef": "FatoVendas.Receita Total",
+          "nativeQueryRef": "Receita Total"
+        }] }
+      }
+    },
+    "objects": {
+      "labels": [{ "properties": { "show": { "expr": { "Literal": { "Value": "true" } } } } }]
+    },
+    "visualContainerObjects": {
+      "title": [{
+        "properties": {
+          "show": { "expr": { "Literal": { "Value": "true" } } },
+          "text": { "expr": { "Literal": { "Value": "'Receita por categoria'" } } }
+        }
+      }],
+      "subTitle": [{
+        "properties": {
+          "show": { "expr": { "Literal": { "Value": "false" } } }
+        }
+      }]
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

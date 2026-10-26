@@ -90,6 +90,20 @@ O OpenCode descobre skills em `.opencode/skills/<nome>/SKILL.md`. O bootstrap cr
 
 Isso mantém válidas referências como `../../common/COMMON-CLI.md`. `AGENTS.md`, `opencode.json`, `opencode.jsonc` e comentários JSONC existentes são preservados. O acelerador não faz merge por regex nem reserializa configurações pessoais.
 
+### Execução Backend Primeiro
+
+O `AGENTS.md` criado para projetos novos orienta o OpenCode a priorizar arquivos, scripts, CLIs, APIs locais e consultas programáticas. A interface do Power BI Desktop fica reservada para operações que dependem dela, preferencialmente em um único lote final após as validações por arquivos.
+
+Essa política também exige:
+
+- progresso verificável no terminal com `[ETAPA x/y]`, `[OK]`, `[AVISO]` e `[PRÓXIMO]`;
+- timeout explícito e no máximo uma nova tentativa para comandos externos, bridge e MCP;
+- nenhuma finalização de processos do Desktop para destravar automação;
+- preservação de alterações não salvas antes de qualquer reload;
+- distinção entre arquivos gerados, estrutura validada, consultas executadas e resultado visual conferido.
+
+O bootstrap preserva um `AGENTS.md` já existente. Portanto, a política vale automaticamente para projetos novos; em projetos já inicializados, incorpore a seção `Execução Backend Primeiro` do template sem remover instruções locais.
+
 Para preparar e abrir um projeto existente:
 
 ```powershell

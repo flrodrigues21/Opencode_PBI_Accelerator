@@ -1,0 +1,13 @@
+{
+  "rowCount": 120,
+  "quantity": 360,
+  "revenue": 720000,
+  "cost": 503400,
+  "profit": 216600,
+  "margin": 0.30083333333333334,
+  "months": {
+    "2026-01": { "rowCount": 42, "quantity": 123, "revenue": 244100, "cost": 171640 },
+    "2026-02": { "rowCount": 38, "quantity": 126, "revenue": 260560, "cost": 182240 },
+    "2026-03": { "rowCount": 40, "quantity": 111, "revenue": 215340, "cost": 149520 }
+  }
+}

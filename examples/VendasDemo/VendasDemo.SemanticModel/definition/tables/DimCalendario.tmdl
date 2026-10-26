@@ -1,0 +1,64 @@
+table DimCalendario
+	dataCategory: Time
+
+	column Data
+		dataType: dateTime
+		isKey
+		formatString: dd/MM/yyyy
+		summarizeBy: none
+		sourceColumn: Data
+
+	column Ano
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: Ano
+
+	column MesNumero
+		dataType: int64
+		formatString: 0
+		isHidden
+		summarizeBy: none
+		sourceColumn: MesNumero
+
+	column Mes
+		dataType: string
+		sortByColumn: MesNumero
+		summarizeBy: none
+		sourceColumn: Mes
+
+	column MesAno
+		dataType: string
+		sortByColumn: MesOrdem
+		summarizeBy: none
+		sourceColumn: MesAno
+
+	column MesOrdem
+		dataType: int64
+		formatString: 0
+		isHidden
+		summarizeBy: none
+		sourceColumn: MesOrdem
+
+	partition DimCalendario = m
+		mode: import
+		source =
+			let
+				Datas = List.Dates(#date(2026, 1, 1), 90, #duration(1, 0, 0, 0)),
+				Linhas = List.Transform(
+					Datas,
+					each {
+						_,
+						Date.Year(_),
+						Date.Month(_),
+						Text.Proper(Date.ToText(_, "MMM", "pt-BR")),
+						Text.Proper(Date.ToText(_, "MMM/yyyy", "pt-BR")),
+						Date.Year(_) * 100 + Date.Month(_)
+					}
+				),
+				Source = #table(
+					type table [Data = date, Ano = Int64.Type, MesNumero = Int64.Type, Mes = text, MesAno = text, MesOrdem = Int64.Type],
+					Linhas
+				)
+			in
+				Source

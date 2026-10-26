@@ -1,0 +1,44 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.9.0/schema.json",
+  "name": "7a8b9c0d1e2f3456a7b8",
+  "position": { "x": 24, "y": 210, "z": 8000, "height": 230, "width": 608, "tabOrder": 700 },
+  "visual": {
+    "visualType": "lineChart",
+    "query": {
+      "queryState": {
+        "Category": { "projections": [{
+          "field": { "Column": { "Expression": { "SourceRef": { "Entity": "DimCalendario" } }, "Property": "MesAno" } },
+          "queryRef": "DimCalendario.MesAno",
+          "nativeQueryRef": "MesAno",
+          "active": true
+        }] },
+        "Y": { "projections": [{
+          "field": { "Measure": { "Expression": { "SourceRef": { "Entity": "FatoVendas" } }, "Property": "Receita Total" } },
+          "queryRef": "FatoVendas.Receita Total",
+          "nativeQueryRef": "Receita Total"
+        }] }
+      }
+    },
+    "objects": {
+      "categoryAxis": [{ "properties": { "axisType": { "expr": { "Literal": { "Value": "'Categorical'" } } } } }],
+      "lineStyles": [{ "properties": {
+        "showMarker": { "expr": { "Literal": { "Value": "true" } } },
+        "strokeWidth": { "expr": { "Literal": { "Value": "3D" } } }
+      } }]
+    },
+    "visualContainerObjects": {
+      "title": [{
+        "properties": {
+          "show": { "expr": { "Literal": { "Value": "true" } } },
+          "text": { "expr": { "Literal": { "Value": "'Receita por mês'" } } }
+        }
+      }],
+      "subTitle": [{
+        "properties": {
+          "show": { "expr": { "Literal": { "Value": "false" } } }
+        }
+      }]
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

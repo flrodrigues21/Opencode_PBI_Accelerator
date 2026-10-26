@@ -1,0 +1,9 @@
+relationship 'Vendas por produto'
+	fromColumn: FatoVendas.ProdutoId
+	toColumn: DimProduto.ProdutoId
+	crossFilteringBehavior: oneDirection
+
+relationship 'Vendas por data'
+	fromColumn: FatoVendas.Data
+	toColumn: DimCalendario.Data
+	crossFilteringBehavior: oneDirection

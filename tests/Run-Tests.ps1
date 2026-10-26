@@ -233,6 +233,7 @@ try {
     Assert-Equal $originalHash (Get-TreeHash $copySource) "PrepareCopy leaves original byte-for-byte unchanged"
     Assert-True (Test-Path -LiteralPath (Join-Path $CopyRoot ".opencode\skills")) "copy scaffolded with skills"
     Assert-Parses (Join-Path $CopyRoot "Abrir-PowerBI-OpenCode.ps1")
+    Assert-True ((Get-Content -LiteralPath (Join-Path $CopyRoot "AGENTS.md") -Raw) -match "Execucao Backend Primeiro") "new projects receive backend-first instructions"
     Assert-Equal (Get-FileHash -LiteralPath (Join-Path $copySource "Sample.SemanticModel\definition\model.tmdl") -Algorithm SHA256).Hash (Get-FileHash -LiteralPath (Join-Path $CopyRoot "Sample.SemanticModel\definition\model.tmdl") -Algorithm SHA256).Hash "TMDL unchanged in copy"
 
     Write-Host "PASS: $passed assertions" -ForegroundColor Green

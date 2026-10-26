@@ -1,0 +1,92 @@
+table FatoVendas
+
+	/// Receita bruta das vendas no contexto de filtro atual.
+	measure 'Receita Total' = SUMX(FatoVendas, FatoVendas[Quantidade] * FatoVendas[PrecoUnitario])
+		formatString: R$ #,##0.00
+
+	/// Custo total das unidades vendidas no contexto de filtro atual.
+	measure 'Custo Total' = SUMX(FatoVendas, FatoVendas[Quantidade] * FatoVendas[CustoUnitario])
+		formatString: R$ #,##0.00
+
+	/// Diferenca entre receita e custo.
+	measure Lucro = [Receita Total] - [Custo Total]
+		formatString: R$ #,##0.00
+
+	/// Percentual do lucro sobre a receita.
+	measure 'Margem %' = DIVIDE([Lucro], [Receita Total])
+		formatString: 0.0%
+
+	/// Soma das unidades vendidas.
+	measure 'Quantidade Vendida' = SUM(FatoVendas[Quantidade])
+		formatString: #,##0
+
+	column VendaId
+		dataType: int64
+		isHidden
+		isKey
+		summarizeBy: none
+		sourceColumn: VendaId
+
+	column Data
+		dataType: dateTime
+		formatString: dd/MM/yyyy
+		isHidden
+		summarizeBy: none
+		sourceColumn: Data
+
+	column ProdutoId
+		dataType: int64
+		isHidden
+		summarizeBy: none
+		sourceColumn: ProdutoId
+
+	column Quantidade
+		dataType: int64
+		formatString: #,##0
+		summarizeBy: sum
+		sourceColumn: Quantidade
+
+	column PrecoUnitario
+		dataType: decimal
+		formatString: R$ #,##0.00
+		isHidden
+		summarizeBy: none
+		sourceColumn: PrecoUnitario
+
+	column CustoUnitario
+		dataType: decimal
+		formatString: R$ #,##0.00
+		isHidden
+		summarizeBy: none
+		sourceColumn: CustoUnitario
+
+	partition FatoVendas = m
+		mode: import
+		source =
+			let
+				Precos = {5200, 1450, 1850, 2400, 480, 620},
+				Custos = {3900, 980, 1200, 1650, 290, 370},
+				Linhas = List.Transform(
+					{1..120},
+					each
+						let
+							VendaId = _,
+							ProdutoId = Number.Mod(VendaId - 1, 6) + 1,
+							Quantidade = Number.Mod((VendaId - 1) * 3, 5) + 1,
+							Data = Date.AddDays(#date(2026, 1, 1), Number.Mod((VendaId - 1) * 17, 90))
+						in
+							{
+								VendaId,
+								Data,
+								ProdutoId,
+								Quantidade,
+								Currency.From(Precos{ProdutoId - 1}),
+								Currency.From(Custos{ProdutoId - 1})
+							}
+				),
+				Source = #table(
+					type table [VendaId = Int64.Type, Data = date, ProdutoId = Int64.Type, Quantidade = Int64.Type, PrecoUnitario = Currency.Type, CustoUnitario = Currency.Type],
+					Linhas
+				)
+			in
+				Source

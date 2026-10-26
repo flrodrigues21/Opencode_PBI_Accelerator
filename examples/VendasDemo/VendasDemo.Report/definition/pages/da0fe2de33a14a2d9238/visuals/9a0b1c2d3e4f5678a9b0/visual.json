@@ -1,0 +1,65 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.9.0/schema.json",
+  "name": "9a0b1c2d3e4f5678a9b0",
+  "position": { "x": 24, "y": 456, "z": 10000, "height": 240, "width": 1232, "tabOrder": 900 },
+  "visual": {
+    "visualType": "tableEx",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": { "Column": { "Expression": { "SourceRef": { "Entity": "DimProduto" } }, "Property": "Produto" } },
+              "queryRef": "DimProduto.Produto",
+              "nativeQueryRef": "Produto"
+            },
+            {
+              "field": { "Column": { "Expression": { "SourceRef": { "Entity": "DimProduto" } }, "Property": "Categoria" } },
+              "queryRef": "DimProduto.Categoria",
+              "nativeQueryRef": "Categoria"
+            },
+            {
+              "field": { "Measure": { "Expression": { "SourceRef": { "Entity": "FatoVendas" } }, "Property": "Quantidade Vendida" } },
+              "queryRef": "FatoVendas.Quantidade Vendida",
+              "nativeQueryRef": "Quantidade Vendida"
+            },
+            {
+              "field": { "Measure": { "Expression": { "SourceRef": { "Entity": "FatoVendas" } }, "Property": "Receita Total" } },
+              "queryRef": "FatoVendas.Receita Total",
+              "nativeQueryRef": "Receita Total"
+            },
+            {
+              "field": { "Measure": { "Expression": { "SourceRef": { "Entity": "FatoVendas" } }, "Property": "Lucro" } },
+              "queryRef": "FatoVendas.Lucro",
+              "nativeQueryRef": "Lucro"
+            },
+            {
+              "field": { "Measure": { "Expression": { "SourceRef": { "Entity": "FatoVendas" } }, "Property": "Margem %" } },
+              "queryRef": "FatoVendas.Margem %",
+              "nativeQueryRef": "Margem %"
+            }
+          ]
+        }
+      }
+    },
+    "objects": {
+      "columnHeaders": [{ "properties": {
+        "columnAdjustment": { "expr": { "Literal": { "Value": "'growToFit'" } } },
+        "autoSizeColumnWidth": { "expr": { "Literal": { "Value": "true" } } }
+      } }]
+    },
+    "visualContainerObjects": {
+      "title": [{
+        "properties": {
+          "show": { "expr": { "Literal": { "Value": "true" } } },
+          "text": { "expr": { "Literal": { "Value": "'Desempenho por produto'" } } }
+        }
+      }],
+      "subTitle": [{
+        "properties": {
+          "show": { "expr": { "Literal": { "Value": "false" } } }
+        }
+      }]
+    }
+  }
+}

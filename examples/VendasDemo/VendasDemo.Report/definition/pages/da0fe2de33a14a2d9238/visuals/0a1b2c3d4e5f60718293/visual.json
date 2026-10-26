@@ -1,0 +1,45 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.9.0/schema.json",
+  "name": "0a1b2c3d4e5f60718293",
+  "position": { "x": 24, "y": 24, "z": 1000, "height": 48, "width": 864, "tabOrder": 0 },
+  "visual": {
+    "visualType": "textbox",
+    "objects": {
+      "general": [{
+        "properties": {
+          "paragraphs": [{
+            "textRuns": [{
+              "value": "Vendas Demo | Visão Geral",
+              "textStyle": {
+                "fontFamily": "Segoe UI Semibold",
+                "fontSize": "24px",
+                "color": "#242424"
+              }
+            }],
+            "horizontalTextAlignment": "left"
+          }]
+        }
+      }]
+    },
+    "visualContainerObjects": {
+      "background": [{
+        "properties": {
+          "show": { "expr": { "Literal": { "Value": "false" } } }
+        }
+      }],
+      "border": [{
+        "properties": {
+          "show": { "expr": { "Literal": { "Value": "false" } } }
+        }
+      }],
+      "padding": [{
+        "properties": {
+          "top": { "expr": { "Literal": { "Value": "0D" } } },
+          "bottom": { "expr": { "Literal": { "Value": "0D" } } },
+          "left": { "expr": { "Literal": { "Value": "0D" } } },
+          "right": { "expr": { "Literal": { "Value": "0D" } } }
+        }
+      }]
+    }
+  }
+}

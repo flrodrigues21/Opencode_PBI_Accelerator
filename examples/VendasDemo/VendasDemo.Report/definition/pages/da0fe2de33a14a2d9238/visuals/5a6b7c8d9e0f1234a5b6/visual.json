@@ -1,0 +1,24 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.9.0/schema.json",
+  "name": "5a6b7c8d9e0f1234a5b6",
+  "position": { "x": 648, "y": 112, "z": 6000, "height": 82, "width": 296, "tabOrder": 500 },
+  "visual": {
+    "visualType": "cardVisual",
+    "query": { "queryState": { "Data": { "projections": [{
+      "field": { "Measure": { "Expression": { "SourceRef": { "Entity": "FatoVendas" } }, "Property": "Lucro" } },
+      "queryRef": "FatoVendas.Lucro",
+      "nativeQueryRef": "Lucro"
+    }] } } },
+    "objects": {
+      "value": [{ "properties": { "fontSize": { "expr": { "Literal": { "Value": "20D" } } } }, "selector": { "id": "default" } }],
+      "label": [{ "properties": { "show": { "expr": { "Literal": { "Value": "true" } } }, "text": { "expr": { "Literal": { "Value": "'Lucro'" } } }, "fontSize": { "expr": { "Literal": { "Value": "11D" } } } }, "selector": { "id": "default" } }],
+      "padding": [{ "properties": { "paddingUniform": { "expr": { "Literal": { "Value": "8D" } } } }, "selector": { "id": "default" } }],
+      "layout": [{ "properties": { "paddingUniform": { "expr": { "Literal": { "Value": "0D" } } } }, "selector": { "id": "default" } }]
+    },
+    "visualContainerObjects": {
+      "title": [{ "properties": { "show": { "expr": { "Literal": { "Value": "false" } } } } }],
+      "padding": [{ "properties": { "top": { "expr": { "Literal": { "Value": "8D" } } }, "bottom": { "expr": { "Literal": { "Value": "8D" } } }, "left": { "expr": { "Literal": { "Value": "8D" } } }, "right": { "expr": { "Literal": { "Value": "8D" } } } }, "selector": { "id": "default" } }],
+      "spacing": [{ "properties": { "customizeSpacing": { "expr": { "Literal": { "Value": "true" } } }, "verticalSpacing": { "expr": { "Literal": { "Value": "2D" } } } }, "selector": { "id": "default" } }]
+    }
+  }
+}

@@ -1,0 +1,47 @@
+table DimProduto
+
+	column ProdutoId
+		dataType: int64
+		isHidden
+		isKey
+		summarizeBy: none
+		sourceColumn: ProdutoId
+
+	column Produto
+		dataType: string
+		summarizeBy: none
+		sourceColumn: Produto
+
+	column Categoria
+		dataType: string
+		summarizeBy: none
+		sourceColumn: Categoria
+
+	column PrecoUnitario
+		dataType: decimal
+		formatString: R$ #,##0.00
+		isHidden
+		summarizeBy: none
+		sourceColumn: PrecoUnitario
+
+	column CustoUnitario
+		dataType: decimal
+		formatString: R$ #,##0.00
+		isHidden
+		summarizeBy: none
+		sourceColumn: CustoUnitario
+
+	partition DimProduto = m
+		mode: import
+		source =
+			#table(
+				type table [ProdutoId = Int64.Type, Produto = text, Categoria = text, PrecoUnitario = Currency.Type, CustoUnitario = Currency.Type],
+				{
+					{1, "Notebook Pro", "Tecnologia", Currency.From(5200), Currency.From(3900)},
+					{2, "Monitor 27 polegadas", "Tecnologia", Currency.From(1450), Currency.From(980)},
+					{3, "Cadeira Ergonomica", "Escritorio", Currency.From(1850), Currency.From(1200)},
+					{4, "Mesa Ajustavel", "Escritorio", Currency.From(2400), Currency.From(1650)},
+					{5, "Headset", "Acessorios", Currency.From(480), Currency.From(290)},
+					{6, "Webcam", "Acessorios", Currency.From(620), Currency.From(370)}
+				}
+			)

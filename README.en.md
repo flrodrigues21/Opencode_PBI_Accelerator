@@ -52,6 +52,20 @@ Backups are stored under `<InstallRoot>\backups`. Restore the latest one with:
 
 The bootstrap creates `.opencode\skills` and `.opencode\common` junctions so relative `../../common/...` references remain valid. Existing `AGENTS.md`, `opencode.json`, `opencode.jsonc`, and JSONC comments are preserved.
 
+### Backend-First Execution
+
+The `AGENTS.md` created for new projects tells OpenCode to prioritize files, scripts, CLIs, local APIs, and programmatic queries. Power BI Desktop UI work is reserved for operations that require it, preferably in one final batch after file validation.
+
+The policy also requires:
+
+- verifiable terminal progress using `[ETAPA x/y]`, `[OK]`, `[AVISO]`, and `[PROXIMO]` markers;
+- explicit timeouts and at most one justified retry for external commands, bridge, and MCP;
+- never terminating Desktop processes to unblock automation;
+- preserving unsaved changes before any reload;
+- distinguishing generated files, validated structure, executed queries, and visually confirmed results.
+
+The bootstrap preserves an existing `AGENTS.md`. The policy therefore applies automatically to new projects; for projects already initialized, merge the template's `Execucao Backend Primeiro` section without removing local instructions.
+
 Prepare and open a project:
 
 ```powershell
