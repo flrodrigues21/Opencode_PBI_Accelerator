@@ -26,3 +26,15 @@
 6. Execute comandos externos com timeout explicito e faca no maximo uma nova tentativa quando houver motivo verificavel. Se bridge ou MCP nao conectar, registre a falha e continue pelas verificacoes de arquivos; nao entre em ciclos de conexao, clique, atualizacao e nova tentativa.
 7. Nao encerre o Power BI Desktop nem processos existentes para destravar automacao. Em caso de dialogo bloqueante ou necessidade de interacao humana, conclua as etapas independentes e informe a acao manual minima.
 8. Diferencie explicitamente `arquivos gerados`, `estrutura e referencias validadas`, `modelo carregado e consultas executadas` e `resultado visual conferido`. Evidencia de uma etapa nao comprova as demais.
+
+## Integracao Segura Com Desktop
+1. Use `powerbi-desktop-safe.cmd` para abrir, resolver alvo, descobrir capacidades e capturar. Nao use `powerbi-desktop open` diretamente sob o timeout do host.
+2. Verifique caminho normalizado, Desktop PID e Bridge antes de operar. O PID lancado e apenas candidato; nunca substitua o alvo pela primeira Bridge disponivel.
+3. Trate `arquivo aberto`, `Bridge pronta`, `engine disponivel` e `MCP conectado` como estados independentes. A Bridge nao expoe engine/porta; nao invente essa evidencia.
+4. Com varias instancias correspondentes, exija `--pid`. Antes de alteracoes MCP, confirme que a conexao pertence ao alvo; se a identidade continuar ambigua, pare.
+5. Descubra capacidades uma vez por versao/PID e reuse o checkpoint. Save, Save As e exportacao PBIX/PBIP completa nao sao capacidades da Bridge 1.0.0; ExportTMDL nao e exportacao de relatorio.
+6. Nao interprete timeout como prova de falha e nao repita `open` automaticamente. Resolva novamente o mesmo caminho.
+7. Capture por pagina, serialmente, com prazo total e checkpoint. Uma chamada incerta coloca o PID em quarentena: nao repita a pagina nem execute outro comando de host ate o PID antigo terminar e o alvo ser resolvido explicitamente para um novo PID.
+8. Se apenas a captura falhar, bloqueie somente a validacao visual e continue tarefas offline independentes. Respeite qualquer ordem do host para interromper chamadas.
+9. Nao automatize mouse, teclado ou foco; nao remonte pacote PBIX; nao use APIs privadas; nao encerre nem salve sessoes do usuario automaticamente.
+10. Diagnosticos devem omitir tokens, credenciais, variaveis de ambiente e caminhos de relatorios alheios.

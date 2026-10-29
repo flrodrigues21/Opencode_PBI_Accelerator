@@ -441,7 +441,7 @@ $skillsRoot = Join-Path $InstallRoot "skills"
 $skillDirectories = @(Get-ChildItem -LiteralPath $skillsRoot -Directory | Where-Object {
     Test-Path -LiteralPath (Join-Path $_.FullName "SKILL.md") -PathType Leaf
 })
-foreach ($requiredSkill in @("powerbi-report-cli", "semantic-model-authoring", "rode-o-bpa", "check-updates")) {
+foreach ($requiredSkill in @("powerbi-report-cli", "semantic-model-authoring", "rode-o-bpa", "check-updates", "powerbi-desktop-safe")) {
     if ($skillDirectories.Name -notcontains $requiredSkill) { throw "Skill nao descoberta: $requiredSkill" }
 }
 Assert-MarkdownDependencies $skillsRoot

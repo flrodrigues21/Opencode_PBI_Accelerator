@@ -19,7 +19,7 @@ $PinnedCommit = "bc42aaf734771bf752c1d7082dd91e5a6ca72b9f"
 $PluginVersion = "0.3.19"
 $PluginRelativePath = "plugins\powerbi-authoring"
 $ExpectedMicrosoftSkills = @("powerbi-report-cli", "semantic-model-authoring")
-$BundledCustomSkills = @("rode-o-bpa", "check-updates")
+$BundledCustomSkills = @("rode-o-bpa", "check-updates", "powerbi-desktop-safe")
 $BundledCommands = @("demo-powerbi")
 $RequiredCommonFiles = @("COMMON-CORE.md", "COMMON-CLI.md", "ITEM-DEFINITIONS-CORE.md")
 $BundleRoot = $PSScriptRoot
@@ -369,6 +369,15 @@ try {
         Copy-Item -LiteralPath $scriptSource -Destination (Join-Path $PayloadRoot "bin\$scriptName") -Force
     }
     Copy-Item -LiteralPath (Join-Path $BundleRoot "bin\pbi-ai.cmd") -Destination (Join-Path $PayloadRoot "bin\pbi-ai.cmd") -Force
+    foreach ($adapterName in @("powerbi-desktop-safe.mjs", "powerbi-desktop-safe.cmd", "bridge-status-worker.mjs")) {
+        $adapterSource = Join-Path $BundleRoot "bin\$adapterName"
+        if (-not (Test-Path -LiteralPath $adapterSource -PathType Leaf)) { throw "Adaptador empacotado ausente: $adapterSource" }
+        Copy-Item -LiteralPath $adapterSource -Destination (Join-Path $PayloadRoot "bin\$adapterName") -Force
+    }
+    Ensure-Directory (Join-Path $PayloadRoot "lib")
+    Copy-Item -LiteralPath (Join-Path $BundleRoot "lib\powerbi-desktop-safe.mjs") -Destination (Join-Path $PayloadRoot "lib\powerbi-desktop-safe.mjs") -Force
+    Ensure-Directory (Join-Path $PayloadRoot "docs")
+    Copy-Item -LiteralPath (Join-Path $BundleRoot "docs\POWERBI-DESKTOP-INTEGRATION.md") -Destination (Join-Path $PayloadRoot "docs\POWERBI-DESKTOP-INTEGRATION.md") -Force
     Copy-Item -LiteralPath (Join-Path $BundleRoot "Restore-PowerBI-OpenCodeAccelerator.ps1") -Destination (Join-Path $PayloadRoot "Restore-PowerBI-OpenCodeAccelerator.ps1") -Force
     Ensure-Directory (Join-Path $PayloadRoot "templates")
     Copy-Item -LiteralPath (Join-Path $BundleRoot "templates\AGENTS.md") -Destination (Join-Path $PayloadRoot "templates\AGENTS.md") -Force
