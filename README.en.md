@@ -13,7 +13,7 @@ Independent accelerator for Power BI PBIP/PBIR/TMDL projects in OpenCode. The de
 | npm CLIs | PBIR authoring/validation and Desktop bridge | Installed locally |
 | Power BI Modeling MCP | Modeling tools for Desktop/local models | Disabled; opt-in |
 
-The installer copies only Microsoft's local-focused `plugins/powerbi-authoring` plugin: `powerbi-report-cli`, `semantic-model-authoring`, and their complete `common/` dependencies. It does not install the broader cloud-focused `fabric-skills` bundle. Custom `rode-o-bpa` and `check-updates` skills remain included, and unknown skills already under `<InstallRoot>\skills` are preserved.
+The installer copies only Microsoft's local-focused `plugins/powerbi-authoring` plugin: `powerbi-report-cli`, `semantic-model-authoring`, and their complete `common/` dependencies. It does not install the broader cloud-focused `fabric-skills` bundle. Custom `rode-o-bpa`, `check-updates`, and `powerbi-desktop-safe` skills remain included, and unknown skills already under `<InstallRoot>\skills` are preserved.
 
 ## Pinned Versions
 
@@ -114,6 +114,16 @@ OpenCode does not automatically import another client's `.mcp.json`. To opt into
 ```
 
 The launcher creates a temporary official-shape OpenCode config and never edits personal config files. It refuses to override an existing `OPENCODE_CONFIG`. Microsoft EULA acceptance may still be required.
+
+### Safe Desktop Targeting
+
+The managed `powerbi-desktop-safe.cmd` adapter separates launch from target confirmation. It correlates the normalized requested path with the Desktop PID and Bridge, never substitutes the first available Bridge, treats the launched PID only as a candidate, and persists pending launch state to prevent automatic duplicate opens.
+
+Multi-page capture is incremental, serial, checkpointed, and protected by a per-PID host lock. A request that times out in flight is marked `OPERATION_STATE_UNKNOWN`, quarantines that PID, and is not repeated because the API exposes neither cancellation nor an operation ID. After the old PID ends, an explicit resolution to a new PID can continue pending pages only. Offline file work can continue when only visual validation is blocked.
+
+Use `--max-pages 1` for the first capture call to validate one page and persist a checkpoint before resuming the remaining pages. For a PBIX Save As checkpoint, `resume <checkpoint> --pid <pid>` returns `READY_TO_RESUME` only when public Desktop state reports both the destination path and `hasUnsavedChanges=false`; otherwise manual confirmation remains pending.
+
+Bridge 1.0.0 exposes application state, reload, and snapshot, but no Save, Save As, or complete PBIX/PBIP export. Microsoft documents PBIX-to-PBIP conversion as a Desktop `File > Save as` operation only. Modeling MCP TMDL export is model metadata, not a complete report export. See [docs/POWERBI-DESKTOP-INTEGRATION.md](docs/POWERBI-DESKTOP-INTEGRATION.md) for commands, structured results, and limitations.
 
 ## Safe Smoke Test
 

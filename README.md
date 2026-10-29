@@ -25,7 +25,7 @@ O instalador copia somente o plugin oficial `plugins/powerbi-authoring`, adequad
 
 O bundle `fabric-skills` é diferente: inclui skills, agentes e MCPs hospedados para workloads Fabric. Ele não é instalado por padrão e não é necessário para PBIP local.
 
-As skills próprias `rode-o-bpa` e `check-updates` continuam instaladas. Skills desconhecidas já existentes em `<InstallRoot>\skills` não são removidas.
+As skills próprias `rode-o-bpa`, `check-updates` e `powerbi-desktop-safe` continuam instaladas. Skills desconhecidas já existentes em `<InstallRoot>\skills` não são removidas.
 
 ## Versões Fixadas
 
@@ -162,6 +162,33 @@ Para iniciar o OpenCode com o Modeling MCP local somente nessa sessão:
 O script gera uma configuração temporária no formato OpenCode, com `type: local`, `command` em array, `enabled: true` e timeout de 30 segundos. Nenhum `opencode.json/jsonc` é alterado. Se `OPENCODE_CONFIG` já estiver definido, o script para para não substituir a configuração do usuário.
 
 O MCP pode exigir aceite da EULA Microsoft. Para conexão com Desktop, abra o Power BI Desktop e o modelo desejado. Não registre simultaneamente MCP local e remoto com ferramentas sobrepostas.
+
+## Abertura E Captura Seguras
+
+O Accelerator inclui um adaptador sobre a biblioteca oficial da Desktop Bridge. Ele evita o `open` longo que pode ultrapassar o timeout do OpenCode, não aceita a primeira Bridge como substituta e persiste checkpoints em `%LOCALAPPDATA%\PowerBI-OpenCode-Accelerator`.
+
+```powershell
+& "$env:POWERBI_OPENCODE_ACCELERATOR\bin\powerbi-desktop-safe.cmd" open "C:\Relatorios\Vendas.pbix" --wait-seconds 15
+& "$env:POWERBI_OPENCODE_ACCELERATOR\bin\powerbi-desktop-safe.cmd" resolve "C:\Relatorios\Vendas.pbix"
+```
+
+`READY` exige evidência de caminho retornada pela instância. `OPENING` ou `TARGET_NOT_READY` não provam falha e não autorizam repetir `open`. `AMBIGUOUS_TARGET` exige `--pid` antes de captura ou alteração.
+
+Captura de todas as páginas é incremental, serial e limitada por prazo:
+
+```powershell
+& "$env:POWERBI_OPENCODE_ACCELERATOR\bin\powerbi-desktop-safe.cmd" capture-all "C:\Relatorios\Vendas.pbip" --pid 1234 --output-dir ".\screenshots" --total-seconds 20 --page-seconds 10
+```
+
+Para validar primeiro uma única página e depois retomar as restantes, acrescente `--max-pages 1` na primeira chamada.
+
+Páginas concluídas permanecem no disco e no checkpoint. Uma página em voo no timeout recebe `OPERATION_STATE_UNKNOWN`, mantém o PID em quarentena e não é repetida automaticamente, pois a API não expõe cancelamento nem ID da operação. Falha visual não bloqueia validações offline independentes. Após o PID antigo terminar, uma resolução explícita para um novo PID permite continuar somente páginas pendentes.
+
+A Bridge 1.0.0 não expõe Save, Save As ou exportação PBIX/PBIP completa. A documentação Microsoft informa que a conversão PBIX↔PBIP exige `File > Save as` no Desktop. O adaptador retorna `UNSUPPORTED_CAPABILITY`, uma única ação manual e um checkpoint de retomada. ExportTMDL do Modeling MCP cobre apenas metadados do modelo, não o relatório completo.
+
+Para Save As em PBIX, `resume <checkpoint> --pid <pid>` só retorna `READY_TO_RESUME` quando o estado público do Desktop confirma simultaneamente o caminho de destino e `hasUnsavedChanges=false`. Caso contrário, exige confirmação manual.
+
+Diagnóstico, exemplos de JSON, causas e limites da seleção MCP estão em [docs/POWERBI-DESKTOP-INTEGRATION.md](docs/POWERBI-DESKTOP-INTEGRATION.md).
 
 ## Smoke Test Seguro
 

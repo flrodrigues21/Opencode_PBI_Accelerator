@@ -57,7 +57,7 @@ function Get-TreeHash([string]$Root) {
 try {
     New-Item -ItemType Directory -Path $TempRoot -Force | Out-Null
 
-    Write-Host "[1/9] Parsing scripts and the repository command"
+    Write-Host "[1/10] Parsing scripts and the repository command"
     foreach ($script in @(Get-ChildItem -LiteralPath $RepoRoot -Filter "*.ps1" -File -Recurse)) { Assert-Parses $script.FullName }
     Assert-True (Test-Path -LiteralPath $CommandSource -PathType Leaf) "repository exposes /demo-powerbi"
     $commandText = Get-Content -LiteralPath $CommandSource -Raw
@@ -67,12 +67,29 @@ try {
     Assert-True ($commandText -match 'VendasDemo-Demo') "demo command defines a safe default destination"
     Assert-True ($commandText -notmatch [regex]::Escape('C:\OpenCode\PowerBI-Accelerator')) "demo command does not hardcode install root"
 
-    Write-Host "[2/9] Clean offline install in a path with spaces"
+    Write-Host "[2/10] Desktop adapter unit tests"
+    & node --test (Join-Path $PSScriptRoot "powerbi-desktop-safe.test.mjs")
+    Assert-Equal 0 $LASTEXITCODE "desktop adapter unit tests"
+
+    Write-Host "[3/10] Clean offline install in a path with spaces"
     & $Installer -InstallRoot $InstallRoot -SkillsSourcePath $SkillsSource -SkipNpmInstall -TestOnlyAllowUnverifiedSkillsSource -TestOnlySkipPrerequisiteChecks
     Assert-True (Test-Path -LiteralPath (Join-Path $InstallRoot "managed-inventory.json") -PathType Leaf) "inventory created"
     Assert-True (Test-Path -LiteralPath (Join-Path $InstallRoot "skills\powerbi-report-cli\references\nested\more.md") -PathType Leaf) "whole Microsoft skill copied"
     Assert-True (Test-Path -LiteralPath (Join-Path $InstallRoot "skills\rode-o-bpa\SKILL.md") -PathType Leaf) "rode-o-bpa installed"
     Assert-True (Test-Path -LiteralPath (Join-Path $InstallRoot "skills\check-updates\SKILL.md") -PathType Leaf) "check-updates installed"
+    Assert-True (Test-Path -LiteralPath (Join-Path $InstallRoot "skills\powerbi-desktop-safe\SKILL.md") -PathType Leaf) "powerbi-desktop-safe installed"
+    Assert-True (Test-Path -LiteralPath (Join-Path $InstallRoot "bin\powerbi-desktop-safe.mjs") -PathType Leaf) "desktop adapter installed"
+    Assert-True (Test-Path -LiteralPath (Join-Path $InstallRoot "bin\bridge-status-worker.mjs") -PathType Leaf) "bounded status worker installed"
+    Assert-True (Test-Path -LiteralPath (Join-Path $InstallRoot "lib\powerbi-desktop-safe.mjs") -PathType Leaf) "desktop adapter library installed"
+    Assert-True (Test-Path -LiteralPath (Join-Path $InstallRoot "docs\POWERBI-DESKTOP-INTEGRATION.md") -PathType Leaf) "desktop integration documentation installed"
+    $installedAdapter = Join-Path $InstallRoot "bin\powerbi-desktop-safe.cmd"
+    $adapterState = Join-Path $TempRoot "Adapter State"
+    $adapterDestination = Join-Path $TempRoot "Manual Save Destination.pbip"
+    $adapterOutput = (& $installedAdapter save-as (Join-Path $RepoRoot "examples\VendasDemo\VendasDemo.pbip") $adapterDestination --state-dir $adapterState 2>&1 | Out-String)
+    Assert-Equal 0 $LASTEXITCODE "installed adapter save-as exit code"
+    $adapterResult = $adapterOutput | ConvertFrom-Json
+    Assert-Equal "UNSUPPORTED_CAPABILITY" $adapterResult.status "installed adapter executes with relative library import"
+    Assert-True (Test-Path -LiteralPath $adapterResult.checkpointPath -PathType Leaf) "installed adapter writes checkpoint"
     Assert-True (-not (Test-Path -LiteralPath (Join-Path $InstallRoot "skills\fabric-skills"))) "fabric-skills not installed"
     $installedCommand = Join-Path $InstallRoot "commands\demo-powerbi.md"
     $installedDemo = Join-Path $InstallRoot "examples\VendasDemo"
@@ -111,7 +128,7 @@ try {
     [IO.Directory]::Delete($escapeLink)
     Write-TestFile $inventoryPath $inventoryText
 
-    Write-Host "[3/9] Reinstall preserves custom paths and cleans obsolete managed paths"
+    Write-Host "[4/10] Reinstall preserves custom paths and cleans obsolete managed paths"
     Write-TestFile (Join-Path $InstallRoot "skills\my-custom-skill\SKILL.md") "---`nname: my-custom-skill`ndescription: custom`n---`n"
     Write-TestFile (Join-Path $InstallRoot "commands\my-custom-command.md") "custom command"
     Write-TestFile (Join-Path $InstallRoot "examples\VendasDemo\custom-note.txt") "custom demo note"
@@ -133,7 +150,7 @@ try {
     Assert-True (-not (Test-Path -LiteralPath (Join-Path $InstallRoot "skills\powerbi-report-planning"))) "legacy report skill removed"
     Assert-True (-not (Test-Path -LiteralPath (Join-Path $InstallRoot "vendor\skills-for-fabric"))) "legacy vendor clone removed"
 
-    Write-Host "[4/9] Source/download and apply failures retain the installed state"
+    Write-Host "[5/10] Source/download and apply failures retain the installed state"
     $inventoryHash = (Get-FileHash -LiteralPath $inventoryPath -Algorithm SHA256).Hash
     $failed = $false
     try { & $Installer -InstallRoot $InstallRoot -SkillsSourcePath (Join-Path $FixtureRoot "missing-source") -SkipNpmInstall -TestOnlySkipPrerequisiteChecks }
@@ -158,7 +175,7 @@ try {
     Assert-Equal $inventoryHash (Get-FileHash -LiteralPath $inventoryPath -Algorithm SHA256).Hash "manifest restore returns previous inventory"
     Assert-Equal "keep me" (Get-Content -LiteralPath (Join-Path $InstallRoot "unmanaged.txt") -Raw) "manifest restore preserves unrelated files"
 
-    Write-Host "[5/9] Launcher preserves project files, commands, and shortcuts"
+    Write-Host "[6/10] Launcher preserves project files, commands, and shortcuts"
     New-Item -ItemType Directory -Path $ProjectRoot -Force | Out-Null
     foreach ($item in @(Get-ChildItem -LiteralPath (Join-Path $FixtureRoot "project") -Force)) {
         Copy-Item -LiteralPath $item.FullName -Destination $ProjectRoot -Recurse -Force
@@ -218,7 +235,7 @@ try {
     Assert-Equal ([IO.Path]::GetFullPath($otherSkills).TrimEnd('\')) ([IO.Path]::GetFullPath([string](Get-Item -LiteralPath $projectSkills -Force).Target).TrimEnd('\')) "foreign junction target preserved"
     & $starter -ProjectPath $ProjectRoot -InstallRoot $InstallRoot -InitializeOnly -Force
 
-    Write-Host "[6/9] Modeling MCP is opt-in and uses a standalone temporary config"
+    Write-Host "[7/10] Modeling MCP is opt-in and uses a standalone temporary config"
     $localBin = Join-Path $InstallRoot "node\node_modules\.bin"
     Write-TestFile (Join-Path $localBin "powerbi-modeling-mcp.cmd") "@echo off`r`nexit /b 0`r`n"
     $capture = Join-Path $TempRoot "captured-opencode-config.json"
@@ -254,7 +271,7 @@ try {
         if (-not [string]::IsNullOrWhiteSpace($oldOpenCodeConfig)) { $env:OPENCODE_CONFIG = $oldOpenCodeConfig }
     }
 
-    Write-Host "[7/9] Smoke diagnostics are read-only and bridge attempts are finite"
+    Write-Host "[8/10] Smoke diagnostics are read-only and bridge attempts are finite"
     $smoke = Join-Path $InstallRoot "bin\Test-PowerBI-OpenCodeAccelerator.ps1"
     $beforeSmoke = Get-TreeHash $ProjectRoot
     $output = (& $smoke -InstallRoot $InstallRoot -ProjectPath $ProjectRoot 6>&1 | Out-String)
@@ -270,7 +287,7 @@ try {
     $notConnectedOutput = (& $smoke -InstallRoot $InstallRoot -ProjectPath $ProjectRoot -TestBridge -BridgeCommand (Join-Path $FixtureRoot "bridge-not-connected.cmd") -BridgeTimeoutSeconds 1 -BridgeAttempts 1 6>&1 | Out-String)
     Assert-True ($notConnectedOutput -match "bridge unavailable:.*not_connected") "zero exit with not_connected payload is not reported as connected"
 
-    Write-Host "[8/9] PrepareCopy scaffolds only a new copy"
+    Write-Host "[9/10] PrepareCopy scaffolds only a new copy"
     $copySource = Join-Path $TempRoot "Copy Source"
     New-Item -ItemType Directory -Path $copySource -Force | Out-Null
     foreach ($item in @(Get-ChildItem -LiteralPath (Join-Path $FixtureRoot "project") -Force)) {
@@ -284,7 +301,7 @@ try {
     Assert-True ((Get-Content -LiteralPath (Join-Path $CopyRoot "AGENTS.md") -Raw) -match "Execucao Backend Primeiro") "new projects receive backend-first instructions"
     Assert-Equal (Get-FileHash -LiteralPath (Join-Path $copySource "Sample.SemanticModel\definition\model.tmdl") -Algorithm SHA256).Hash (Get-FileHash -LiteralPath (Join-Path $CopyRoot "Sample.SemanticModel\definition\model.tmdl") -Algorithm SHA256).Hash "TMDL unchanged in copy"
 
-    Write-Host "[9/9] Demo command flow creates one clean independent copy"
+    Write-Host "[10/10] Demo command flow creates one clean independent copy"
     $reportAuthorFixture = Join-Path $InstallRoot "node\node_modules\.bin\powerbi-report-author.cmd"
     Write-TestFile $reportAuthorFixture "@echo off`r`nif not `"%~1`"==`"validate`" exit /b 11`r`nif not `"%~3`"==`"--no-schema`" exit /b 12`r`nif not exist `"%~2`" exit /b 13`r`necho {`"data`":{`"result`":`"succeeded`"}}`r`n"
     $demoOutput = (& $smoke -InstallRoot $InstallRoot -ProjectPath $ProjectRoot -PrepareDemo -DemoDestination $DemoCopyRoot 6>&1 | Out-String)

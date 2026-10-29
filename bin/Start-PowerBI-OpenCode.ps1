@@ -118,7 +118,9 @@ if ($EnableModelingMcp -and -not $InitializeOnly) {
 }
 
 if (Test-Path -LiteralPath $LocalBin -PathType Container) { $env:PATH = "$LocalBin;$env:PATH" }
+$env:PATH = "$(Join-Path $InstallRoot 'bin');$env:PATH"
 $env:POWERBI_OPENCODE_ACCELERATOR = $InstallRoot
+$env:POWERBI_DESKTOP_SAFE = Join-Path $InstallRoot "bin\powerbi-desktop-safe.cmd"
 
 $opencodeDirectory = Join-Path $ProjectPath ".opencode"
 if (Test-Path -LiteralPath $opencodeDirectory -PathType Leaf) { throw "'.opencode' e um arquivo; esperado diretorio." }
@@ -163,7 +165,19 @@ if (-not (Test-Path -LiteralPath $shortcutCmdPath)) {
 }
 
 $pbip = Get-ChildItem -LiteralPath $ProjectPath -Filter "*.pbip" -File -ErrorAction SilentlyContinue | Select-Object -First 1
-if ($OpenDesktop -and $null -ne $pbip) { Start-Process -FilePath $pbip.FullName }
+if ($OpenDesktop -and $null -ne $pbip) {
+    $safeDesktop = Join-Path $InstallRoot "bin\powerbi-desktop-safe.mjs"
+    if (-not (Test-Path -LiteralPath $safeDesktop -PathType Leaf)) { throw "Adaptador Desktop seguro nao encontrado: $safeDesktop" }
+    $openOutput = (& node $safeDesktop open $pbip.FullName --wait-seconds 15 2>&1 | Out-String).Trim()
+    $openExitCode = $LASTEXITCODE
+    Write-Host $openOutput
+    if ($openExitCode -ne 0) { throw "Abertura segura do Power BI Desktop falhou com codigo $openExitCode." }
+    try { $openResult = $openOutput | ConvertFrom-Json }
+    catch { throw "Abertura segura retornou JSON invalido: $($_.Exception.Message)" }
+    if ($openResult.status -notin @("READY", "OPENING", "TARGET_NOT_READY", "OPEN_IN_PROGRESS")) {
+        throw "Abertura segura interrompida pelo estado: $($openResult.status)."
+    }
+}
 
 if ($InitializeOnly) {
     Write-Host "Projeto preparado. Comandos personalizados, AGENTS.md e configuracoes OpenCode existentes foram preservados." -ForegroundColor Green
