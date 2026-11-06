@@ -7,13 +7,17 @@ param(
     [switch]$InitializeOnly,
     [switch]$OpenDesktop,
     [switch]$Force,
-    [switch]$EnableModelingMcp
+    [switch]$EnableModelingMcp,
+    [ValidateSet("attended", "background")]
+    [string]$ExecutionMode,
+    [string]$ExecutionTaskId
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $ProjectPath = [IO.Path]::GetFullPath($ProjectPath)
 $InstallRoot = [IO.Path]::GetFullPath($InstallRoot)
+$InteractiveSessionId = [Diagnostics.Process]::GetCurrentProcess().SessionId
 $SharedSkills = Join-Path $InstallRoot "skills"
 $SharedCommon = Join-Path $InstallRoot "common"
 $LocalBin = Join-Path $InstallRoot "node\node_modules\.bin"
@@ -102,6 +106,9 @@ if (-not $InitializeOnly -and $null -eq (Get-Command opencode -ErrorAction Silen
     throw "OpenCode nao encontrado no PATH."
 }
 $previousConfig = [Environment]::GetEnvironmentVariable("OPENCODE_CONFIG", "Process")
+$previousExecutionTaskId = [Environment]::GetEnvironmentVariable("POWERBI_EXECUTION_TASK_ID", "Process")
+$previousExecutionMode = [Environment]::GetEnvironmentVariable("POWERBI_EXECUTION_MODE", "Process")
+$previousInteractiveSessionId = [Environment]::GetEnvironmentVariable("POWERBI_INTERACTIVE_SESSION_ID", "Process")
 $mcpCommand = $null
 if ($EnableModelingMcp -and -not $InitializeOnly) {
     if (-not [string]::IsNullOrWhiteSpace($previousConfig)) {
@@ -121,6 +128,21 @@ if (Test-Path -LiteralPath $LocalBin -PathType Container) { $env:PATH = "$LocalB
 $env:PATH = "$(Join-Path $InstallRoot 'bin');$env:PATH"
 $env:POWERBI_OPENCODE_ACCELERATOR = $InstallRoot
 $env:POWERBI_DESKTOP_SAFE = Join-Path $InstallRoot "bin\powerbi-desktop-safe.cmd"
+
+if ($OpenDesktop -and [string]::IsNullOrWhiteSpace($ExecutionMode)) {
+    Write-Host "Como você quer executar?"
+    Write-Host "1. Acompanhar na tela — o Desktop pode abrir e mostrar as etapas."
+    Write-Host "2. Em background — você continua usando sua janela enquanto eu trabalho sem tomar o foco."
+    $choice = Read-Host "Escolha 1 ou 2"
+    if ($choice -eq "1") { $ExecutionMode = "attended" }
+    elseif ($choice -eq "2") { $ExecutionMode = "background" }
+    else { throw "Modo de execucao invalido. Nenhuma janela foi aberta ou ativada." }
+}
+if (-not [string]::IsNullOrWhiteSpace($ExecutionMode)) {
+    if ([string]::IsNullOrWhiteSpace($ExecutionTaskId)) {
+        $ExecutionTaskId = "launcher:${InteractiveSessionId}:${PID}:$([Guid]::NewGuid().ToString('N'))"
+    }
+}
 
 $opencodeDirectory = Join-Path $ProjectPath ".opencode"
 if (Test-Path -LiteralPath $opencodeDirectory -PathType Leaf) { throw "'.opencode' e um arquivo; esperado diretorio." }
@@ -147,13 +169,26 @@ param(
     [switch]`$InitializeOnly,
     [switch]`$OpenDesktop,
     [switch]`$Force,
-    [switch]`$EnableModelingMcp
+    [switch]`$EnableModelingMcp,
+    [ValidateSet("attended", "background")]
+    [string]`$ExecutionMode,
+    [string]`$ExecutionTaskId
 )
 
 `$ErrorActionPreference = "Stop"
 `$accelerator = '$escapedInstallRoot'
 `$starter = Join-Path `$accelerator "bin\Start-PowerBI-OpenCode.ps1"
-& `$starter -ProjectPath `$PSScriptRoot -InstallRoot `$accelerator -InitializeOnly:`$InitializeOnly -OpenDesktop:`$OpenDesktop -Force:`$Force -EnableModelingMcp:`$EnableModelingMcp
+`$parameters = @{
+    ProjectPath = `$PSScriptRoot
+    InstallRoot = `$accelerator
+    InitializeOnly = `$InitializeOnly
+    OpenDesktop = `$OpenDesktop
+    Force = `$Force
+    EnableModelingMcp = `$EnableModelingMcp
+}
+if (-not [string]::IsNullOrWhiteSpace(`$ExecutionMode)) { `$parameters.ExecutionMode = `$ExecutionMode }
+if (-not [string]::IsNullOrWhiteSpace(`$ExecutionTaskId)) { `$parameters.ExecutionTaskId = `$ExecutionTaskId }
+& `$starter @parameters
 "@
 $shortcutPs1Path = Join-Path $ProjectPath "Abrir-PowerBI-OpenCode.ps1"
 $shortcutCmdPath = Join-Path $ProjectPath "Abrir-PowerBI-OpenCode.cmd"
@@ -166,16 +201,25 @@ if (-not (Test-Path -LiteralPath $shortcutCmdPath)) {
 
 $pbip = Get-ChildItem -LiteralPath $ProjectPath -Filter "*.pbip" -File -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($OpenDesktop -and $null -ne $pbip) {
+    Write-Host "Sessao interativa do launcher: $InteractiveSessionId"
     $safeDesktop = Join-Path $InstallRoot "bin\powerbi-desktop-safe.mjs"
     if (-not (Test-Path -LiteralPath $safeDesktop -PathType Leaf)) { throw "Adaptador Desktop seguro nao encontrado: $safeDesktop" }
-    $openOutput = (& node $safeDesktop open $pbip.FullName --wait-seconds 15 2>&1 | Out-String).Trim()
+    if ($ExecutionMode -eq "background") {
+        $openOutput = (& node $safeDesktop execution-mode $pbip.FullName --task-id $ExecutionTaskId --execution-mode $ExecutionMode --session-id $InteractiveSessionId 2>&1 | Out-String).Trim()
+    }
+    else {
+        $openOutput = (& node $safeDesktop open $pbip.FullName --wait-seconds 15 --task-id $ExecutionTaskId --execution-mode $ExecutionMode --session-id $InteractiveSessionId 2>&1 | Out-String).Trim()
+    }
     $openExitCode = $LASTEXITCODE
     Write-Host $openOutput
     if ($openExitCode -ne 0) { throw "Abertura segura do Power BI Desktop falhou com codigo $openExitCode." }
     try { $openResult = $openOutput | ConvertFrom-Json }
     catch { throw "Abertura segura retornou JSON invalido: $($_.Exception.Message)" }
-    if ($openResult.status -notin @("READY", "OPENING", "TARGET_NOT_READY", "OPEN_IN_PROGRESS")) {
+    if ($openResult.status -notin @("READY", "OPENING", "TARGET_NOT_READY", "OPEN_IN_PROGRESS", "EXECUTION_MODE_READY")) {
         throw "Abertura segura interrompida pelo estado: $($openResult.status)."
+    }
+    if ($ExecutionMode -eq "background") {
+        Write-Host "Modo background registrado; o Power BI Desktop nao foi aberto nem ativado." -ForegroundColor Green
     }
 }
 
@@ -186,6 +230,13 @@ if ($InitializeOnly) {
 
 $generatedConfig = $null
 try {
+    if (-not [string]::IsNullOrWhiteSpace($ExecutionTaskId)) {
+        $env:POWERBI_EXECUTION_TASK_ID = $ExecutionTaskId
+    }
+    if (-not [string]::IsNullOrWhiteSpace($ExecutionMode)) {
+        $env:POWERBI_EXECUTION_MODE = $ExecutionMode
+    }
+    $env:POWERBI_INTERACTIVE_SESSION_ID = [string]$InteractiveSessionId
     if ($EnableModelingMcp) {
         $generatedConfig = Join-Path ([IO.Path]::GetTempPath()) ("opencode-powerbi-mcp-" + [Guid]::NewGuid().ToString("N") + ".json")
         $config = [ordered]@{
@@ -218,6 +269,18 @@ try {
     if ($openCodeExitCode -ne 0) { throw "OpenCode terminou com codigo $openCodeExitCode." }
 }
 finally {
+    Remove-Item Env:POWERBI_EXECUTION_TASK_ID -ErrorAction SilentlyContinue
+    if (-not [string]::IsNullOrWhiteSpace($previousExecutionTaskId)) {
+        $env:POWERBI_EXECUTION_TASK_ID = $previousExecutionTaskId
+    }
+    Remove-Item Env:POWERBI_EXECUTION_MODE -ErrorAction SilentlyContinue
+    if (-not [string]::IsNullOrWhiteSpace($previousExecutionMode)) {
+        $env:POWERBI_EXECUTION_MODE = $previousExecutionMode
+    }
+    Remove-Item Env:POWERBI_INTERACTIVE_SESSION_ID -ErrorAction SilentlyContinue
+    if (-not [string]::IsNullOrWhiteSpace($previousInteractiveSessionId)) {
+        $env:POWERBI_INTERACTIVE_SESSION_ID = $previousInteractiveSessionId
+    }
     if ($EnableModelingMcp) {
         Remove-Item Env:OPENCODE_CONFIG -ErrorAction SilentlyContinue
         if (-not [string]::IsNullOrWhiteSpace($previousConfig)) { $env:OPENCODE_CONFIG = $previousConfig }

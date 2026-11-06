@@ -28,13 +28,18 @@
 8. Diferencie explicitamente `arquivos gerados`, `estrutura e referencias validadas`, `modelo carregado e consultas executadas` e `resultado visual conferido`. Evidencia de uma etapa nao comprova as demais.
 
 ## Integracao Segura Com Desktop
-1. Use `powerbi-desktop-safe.cmd` para abrir, resolver alvo, descobrir capacidades e capturar. Nao use `powerbi-desktop open` diretamente sob o timeout do host.
-2. Verifique caminho normalizado, Desktop PID e Bridge antes de operar. O PID lancado e apenas candidato; nunca substitua o alvo pela primeira Bridge disponivel.
-3. Trate `arquivo aberto`, `Bridge pronta`, `engine disponivel` e `MCP conectado` como estados independentes. A Bridge nao expoe engine/porta; nao invente essa evidencia.
-4. Com varias instancias correspondentes, exija `--pid`. Antes de alteracoes MCP, confirme que a conexao pertence ao alvo; se a identidade continuar ambigua, pare.
-5. Descubra capacidades uma vez por versao/PID e reuse o checkpoint. Save, Save As e exportacao PBIX/PBIP completa nao sao capacidades da Bridge 1.0.0; ExportTMDL nao e exportacao de relatorio.
-6. Nao interprete timeout como prova de falha e nao repita `open` automaticamente. Resolva novamente o mesmo caminho.
-7. Capture por pagina, serialmente, com prazo total e checkpoint. Uma chamada incerta coloca o PID em quarentena: nao repita a pagina nem execute outro comando de host ate o PID antigo terminar e o alvo ser resolvido explicitamente para um novo PID.
-8. Se apenas a captura falhar, bloqueie somente a validacao visual e continue tarefas offline independentes. Respeite qualquer ordem do host para interromper chamadas.
-9. Nao automatize mouse, teclado ou foco; nao remonte pacote PBIX; nao use APIs privadas; nao encerre nem salve sessoes do usuario automaticamente.
-10. Diagnosticos devem omitir tokens, credenciais, variaveis de ambiente e caminhos de relatorios alheios.
+1. Antes da primeira chamada ao Desktop ou Bridge para cada tarefa e alvo, pergunte: `Como você quer executar? 1. Acompanhar na tela — o Desktop pode abrir e mostrar as etapas. 2. Em background — você continua usando sua janela enquanto eu trabalho sem tomar o foco.`
+2. Registre a escolha com `--task-id` e `--execution-mode attended|background`. Reuse o mesmo checkpoint nas retomadas; altere o modo apenas por pedido explicito. Sem escolha, faca somente inspecao offline.
+3. Em background, aceite apenas operacoes classificadas `BACKGROUND_SAFE` ou `OFFLINE`. Nao contorne `FOCUS_POLICY_BLOCKED`; abertura, acao manual e comportamento desconhecido permanecem bloqueados.
+4. Use `powerbi-desktop-safe.cmd` para abrir, resolver alvo, descobrir capacidades e capturar. Nao use `powerbi-desktop open` diretamente sob o timeout do host.
+5. Verifique caminho normalizado, Desktop PID e Bridge antes de operar. O PID lancado e apenas candidato; nunca substitua o alvo pela primeira Bridge disponivel.
+6. Trate `arquivo aberto`, `Bridge pronta`, `engine disponivel` e `MCP conectado` como estados independentes. A Bridge nao expoe engine/porta; nao invente essa evidencia.
+7. Limite descoberta e selecao ao `SessionId` interativo informado pelo launcher. Ignore processos Desktop de outras sessoes; caminho, PID e sessao devem corresponder. Com varias instancias correspondentes na sessao atual, exija `--pid`.
+8. Descubra capacidades uma vez por versao/PID e reuse o checkpoint. Save, Save As e exportacao PBIX/PBIP completa nao sao capacidades da Bridge 1.0.0; ExportTMDL nao e exportacao de relatorio.
+9. Nao interprete timeout como prova de falha e nao repita `open` automaticamente. Resolva novamente o mesmo caminho.
+10. Capture por pagina, serialmente, com prazo total e checkpoint. Uma chamada incerta coloca o PID em quarentena: nao repita a pagina nem execute outro comando de host ate o PID antigo terminar e o alvo ser resolvido explicitamente para um novo PID.
+11. Captura representa a sessao Desktop. Se `diskAlignment=SESSION_DIFFERS_FROM_DISK`, nao afirme que a imagem representa o PBIP salvo em disco.
+12. Para refresh ou Ctrl+S manual, use os checkpoints `request-refresh`/`request-save` e solicite a acao uma unica vez. Conclua com `resume --completed` somente apos confirmacao explicita.
+13. Se apenas a captura falhar, bloqueie somente a validacao visual e continue tarefas offline independentes. Respeite qualquer ordem do host para interromper chamadas.
+14. Nao automatize mouse, teclado ou foco; nao remonte pacote PBIX; nao use APIs privadas; nao encerre nem salve sessoes do usuario automaticamente.
+15. Diagnosticos devem omitir tokens, credenciais, variaveis de ambiente e caminhos de relatorios alheios.

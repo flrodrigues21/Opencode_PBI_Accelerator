@@ -85,11 +85,13 @@ try {
     $installedAdapter = Join-Path $InstallRoot "bin\powerbi-desktop-safe.cmd"
     $adapterState = Join-Path $TempRoot "Adapter State"
     $adapterDestination = Join-Path $TempRoot "Manual Save Destination.pbip"
-    $adapterOutput = (& $installedAdapter save-as (Join-Path $RepoRoot "examples\VendasDemo\VendasDemo.pbip") $adapterDestination --state-dir $adapterState 2>&1 | Out-String)
+    $adapterOutput = (& $installedAdapter save-as (Join-Path $RepoRoot "examples\VendasDemo\VendasDemo.pbip") $adapterDestination --state-dir $adapterState --task-id "test-save-as" --execution-mode "attended" 2>&1 | Out-String)
     Assert-Equal 0 $LASTEXITCODE "installed adapter save-as exit code"
     $adapterResult = $adapterOutput | ConvertFrom-Json
     Assert-Equal "UNSUPPORTED_CAPABILITY" $adapterResult.status "installed adapter executes with relative library import"
     Assert-True (Test-Path -LiteralPath $adapterResult.checkpointPath -PathType Leaf) "installed adapter writes checkpoint"
+    $backgroundOpen = (& $installedAdapter open (Join-Path $RepoRoot "examples\VendasDemo\VendasDemo.pbip") --state-dir $adapterState --task-id "test-background" --execution-mode "background" 2>&1 | Out-String) | ConvertFrom-Json
+    Assert-Equal "FOCUS_POLICY_BLOCKED" $backgroundOpen.status "background mode blocks Desktop launch before loading the Bridge"
     Assert-True (-not (Test-Path -LiteralPath (Join-Path $InstallRoot "skills\fabric-skills"))) "fabric-skills not installed"
     $installedCommand = Join-Path $InstallRoot "commands\demo-powerbi.md"
     $installedDemo = Join-Path $InstallRoot "examples\VendasDemo"
@@ -201,6 +203,15 @@ try {
     Assert-True (@(Get-ChildItem -LiteralPath (Join-Path $ProjectRoot ".opencode") -Directory | Where-Object { $_.Name -like "skills.backup-*" }).Count -eq 1) "local skills moved to timestamped backup"
     Assert-True (@(Get-ChildItem -LiteralPath (Join-Path $ProjectRoot ".opencode") -Directory | Where-Object { $_.Name -like "common.backup-*" }).Count -eq 1) "local common moved to timestamped backup"
     Assert-Parses (Join-Path $ProjectRoot "Abrir-PowerBI-OpenCode.ps1")
+    & (Join-Path $ProjectRoot "Abrir-PowerBI-OpenCode.ps1") -InitializeOnly -Force
+    Assert-True ($true) "generated shortcut runs without an execution mode"
+    $oldLocalAppData = $env:LOCALAPPDATA
+    try {
+        $env:LOCALAPPDATA = Join-Path $TempRoot "Launcher State"
+        & $starter -ProjectPath $ProjectRoot -InstallRoot $InstallRoot -InitializeOnly -OpenDesktop -ExecutionMode background -ExecutionTaskId "launcher-background-test"
+    }
+    finally { $env:LOCALAPPDATA = $oldLocalAppData }
+    Assert-True ($true) "background launcher records mode without opening Desktop"
     Write-TestFile $projectDemoCommand "custom demo command"
     & $starter -ProjectPath $ProjectRoot -InstallRoot $InstallRoot -InitializeOnly -Force
     Assert-Equal "custom demo command" (Get-Content -LiteralPath $projectDemoCommand -Raw) "same-name custom command is never overwritten"
@@ -239,13 +250,21 @@ try {
     $localBin = Join-Path $InstallRoot "node\node_modules\.bin"
     Write-TestFile (Join-Path $localBin "powerbi-modeling-mcp.cmd") "@echo off`r`nexit /b 0`r`n"
     $capture = Join-Path $TempRoot "captured-opencode-config.json"
+    $environmentCapture = Join-Path $TempRoot "captured-opencode-environment.txt"
     $oldPath = $env:PATH
     $oldOpenCodeConfig = [Environment]::GetEnvironmentVariable("OPENCODE_CONFIG", "Process")
+    $oldExecutionTaskId = [Environment]::GetEnvironmentVariable("POWERBI_EXECUTION_TASK_ID", "Process")
+    $oldExecutionMode = [Environment]::GetEnvironmentVariable("POWERBI_EXECUTION_MODE", "Process")
+    $oldInteractiveSessionId = [Environment]::GetEnvironmentVariable("POWERBI_INTERACTIVE_SESSION_ID", "Process")
     $env:PATH = "$FixtureRoot;$oldPath"
     $env:OPENCODE_CAPTURE = $capture
+    $env:OPENCODE_ENV_CAPTURE = $environmentCapture
+    $env:POWERBI_EXECUTION_TASK_ID = "preserved-parent-task"
+    $env:POWERBI_EXECUTION_MODE = "preserved-parent-mode"
+    $env:POWERBI_INTERACTIVE_SESSION_ID = "999"
     Remove-Item Env:OPENCODE_CONFIG -ErrorAction SilentlyContinue
     try {
-        & $starter -ProjectPath $ProjectRoot -InstallRoot $InstallRoot -EnableModelingMcp
+        & $starter -ProjectPath $ProjectRoot -InstallRoot $InstallRoot -EnableModelingMcp -ExecutionMode background -ExecutionTaskId "temporary-launcher-task"
         $mcpConfig = Get-Content -LiteralPath $capture -Raw | ConvertFrom-Json
         Assert-Equal "https://opencode.ai/config.json" $mcpConfig.'$schema' "MCP config schema"
         Assert-Equal "local" $mcpConfig.mcp.'powerbi-modeling-mcp-accelerator'.type "MCP config local type"
@@ -253,7 +272,27 @@ try {
         Assert-Equal (Join-Path $localBin "powerbi-modeling-mcp.cmd") $mcpConfig.mcp.'powerbi-modeling-mcp-accelerator'.command[0] "MCP local command path"
         Assert-Equal "--start" $mcpConfig.mcp.'powerbi-modeling-mcp-accelerator'.command[1] "MCP start argument"
         Assert-Equal 30000 $mcpConfig.mcp.'powerbi-modeling-mcp-accelerator'.timeout "MCP timeout"
+        $capturedEnvironment = @(Get-Content -LiteralPath $environmentCapture)
+        Assert-Equal "temporary-launcher-task" $capturedEnvironment[0] "launcher passes explicit execution task to OpenCode"
+        Assert-Equal "background" $capturedEnvironment[1] "launcher passes execution mode to OpenCode without OpenDesktop"
+        Assert-Equal ([string][Diagnostics.Process]::GetCurrentProcess().SessionId) $capturedEnvironment[2] "launcher passes its interactive session to OpenCode"
         Assert-True ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable("OPENCODE_CONFIG", "Process"))) "OPENCODE_CONFIG cleaned after invocation"
+        Assert-Equal "preserved-parent-task" $env:POWERBI_EXECUTION_TASK_ID "launcher restores inherited execution task after invocation"
+        Assert-Equal "preserved-parent-mode" $env:POWERBI_EXECUTION_MODE "launcher restores inherited execution mode after invocation"
+        Assert-Equal "999" $env:POWERBI_INTERACTIVE_SESSION_ID "launcher restores inherited interactive session after invocation"
+
+        $firstDefaultCapture = Join-Path $TempRoot "captured-default-task-1.txt"
+        $secondDefaultCapture = Join-Path $TempRoot "captured-default-task-2.txt"
+        Remove-Item Env:OPENCODE_CAPTURE -ErrorAction SilentlyContinue
+        $env:OPENCODE_ENV_CAPTURE = $firstDefaultCapture
+        & $starter -ProjectPath $ProjectRoot -InstallRoot $InstallRoot -ExecutionMode background
+        $env:OPENCODE_ENV_CAPTURE = $secondDefaultCapture
+        & $starter -ProjectPath $ProjectRoot -InstallRoot $InstallRoot -ExecutionMode background
+        $firstDefaultTask = @(Get-Content -LiteralPath $firstDefaultCapture)[0]
+        $secondDefaultTask = @(Get-Content -LiteralPath $secondDefaultCapture)[0]
+        Assert-True ($firstDefaultTask -like "launcher:*") "launcher creates a default task ID"
+        Assert-True ($firstDefaultTask -ne $secondDefaultTask) "concurrent launcher invocations receive distinct default task IDs"
+
         $projectHash = Get-TreeHash $ProjectRoot
         $env:OPENCODE_CONFIG = Join-Path $TempRoot "existing-opencode.json"
         $failed = $false
@@ -267,8 +306,15 @@ try {
     finally {
         $env:PATH = $oldPath
         Remove-Item Env:OPENCODE_CAPTURE -ErrorAction SilentlyContinue
+        Remove-Item Env:OPENCODE_ENV_CAPTURE -ErrorAction SilentlyContinue
         Remove-Item Env:OPENCODE_CONFIG -ErrorAction SilentlyContinue
+        Remove-Item Env:POWERBI_EXECUTION_TASK_ID -ErrorAction SilentlyContinue
+        Remove-Item Env:POWERBI_EXECUTION_MODE -ErrorAction SilentlyContinue
+        Remove-Item Env:POWERBI_INTERACTIVE_SESSION_ID -ErrorAction SilentlyContinue
         if (-not [string]::IsNullOrWhiteSpace($oldOpenCodeConfig)) { $env:OPENCODE_CONFIG = $oldOpenCodeConfig }
+        if (-not [string]::IsNullOrWhiteSpace($oldExecutionTaskId)) { $env:POWERBI_EXECUTION_TASK_ID = $oldExecutionTaskId }
+        if (-not [string]::IsNullOrWhiteSpace($oldExecutionMode)) { $env:POWERBI_EXECUTION_MODE = $oldExecutionMode }
+        if (-not [string]::IsNullOrWhiteSpace($oldInteractiveSessionId)) { $env:POWERBI_INTERACTIVE_SESSION_ID = $oldInteractiveSessionId }
     }
 
     Write-Host "[8/10] Smoke diagnostics are read-only and bridge attempts are finite"
