@@ -1,12 +1,28 @@
 # Integracao segura com Power BI Desktop
 
+## Modos de execucao e foco
+
+Antes da primeira chamada ao Desktop ou Bridge para uma tarefa e alvo, pergunte:
+
+```text
+Como você quer executar?
+1. Acompanhar na tela — o Desktop pode abrir e mostrar as etapas.
+2. Em background — você continua usando sua janela enquanto eu trabalho sem tomar o foco.
+```
+
+A primeira chamada recebe `--task-id <id> --execution-mode attended|background`. O adaptador persiste a escolha por tarefa e caminho em `%LOCALAPPDATA%\PowerBI-OpenCode-Accelerator\execution-mode`; retomadas passam apenas o mesmo `--task-id`. Informar outro `--execution-mode` altera explicitamente o checkpoint.
+
+Sem escolha, o adaptador retorna `EXECUTION_MODE_REQUIRED` antes de carregar a Bridge. Em `background`, somente operacoes classificadas `BACKGROUND_SAFE` ou `OFFLINE` sao aceitas. `resolve`, `capabilities` e `capture-all` usam a Bridge sem automacao de janela; `open`, Save As e pedidos manuais de refresh/save retornam `FOCUS_POLICY_BLOCKED`. A policy tambem bloqueia qualquer futura operacao de host ainda nao classificada; um nome de comando inexistente na CLI retorna `COMMAND_FAILED`. O modo nao autoriza mouse, teclado, ativacao de janela ou APIs privadas.
+
+O launcher detecta sua sessao interativa do Windows e passa `--session-id`. Descoberta, selecao por caminho/PID e validacao real aceitam apenas processos `PBIDesktop` com o mesmo `SessionId`; processos de outras sessoes sao ignorados e registrados apenas como diagnostico informativo. Se a sessao nao puder ser determinada, nenhuma operacao Desktop e tentada.
+
 ## Causas verificadas
 
 ### Abertura reportada como falha
 
 `@microsoft/powerbi-desktop-bridge-cli@1.0.0` executa `PBIDesktop.exe` com `detached: true`, descarta os streams do Desktop e chama `unref()`. Em seguida, o comando `open` permanece ativo por ate 60 segundos em `findBridge()`. Se o host do OpenCode tiver timeout menor, ele interrompe o PowerShell/Node que ainda aguarda e pode apresentar `ChildProcess.kill`, embora o Desktop ja tenha sido iniciado.
 
-O erro nao e produzido pelo Modeling MCP. O adaptador evita a janela longa: registra o lancamento imediatamente, limita sua propria espera e retorna `OPENING` ou `TARGET_NOT_READY` como estado, sem interpretar a interrupcao como falha de abertura.
+O erro nao e produzido pelo Modeling MCP. O adaptador evita a janela longa: registra o lancamento imediatamente, limita sua propria espera e retorna `READY`, `OPENING` ou `TARGET_NOT_READY` como estado, sem interpretar a interrupcao como falha de abertura. Um wrapper de shell que acompanha toda a arvore GUI ainda pode exibir `ChildProcess.kill` depois de o processo Node terminar; nesse caso, use o JSON/stdout e o checkpoint do adaptador, confirme que nao restou processo Node e resolva o mesmo alvo em vez de repetir `open`.
 
 ### Instancia errada
 
@@ -44,38 +60,48 @@ Referencias:
 Abrir sem confundir timeout com falha:
 
 ```powershell
-& "$env:POWERBI_OPENCODE_ACCELERATOR\bin\powerbi-desktop-safe.cmd" open "C:\Relatorios\Vendas.pbix" --wait-seconds 15
+& "$env:POWERBI_OPENCODE_ACCELERATOR\bin\powerbi-desktop-safe.cmd" open "C:\Relatorios\Vendas.pbip" --task-id "revisao-vendas" --execution-mode attended --wait-seconds 15
 ```
 
 Resolver novamente sem abrir outra instancia:
 
 ```powershell
-& "$env:POWERBI_OPENCODE_ACCELERATOR\bin\powerbi-desktop-safe.cmd" resolve "C:\Relatorios\Vendas.pbix"
+& "$env:POWERBI_OPENCODE_ACCELERATOR\bin\powerbi-desktop-safe.cmd" resolve "C:\Relatorios\Vendas.pbip" --task-id "revisao-vendas"
 ```
 
 Descobrir capacidades uma vez para o PID correto:
 
 ```powershell
-& "$env:POWERBI_OPENCODE_ACCELERATOR\bin\powerbi-desktop-safe.cmd" capabilities "C:\Relatorios\Vendas.pbip" --pid 1234
+& "$env:POWERBI_OPENCODE_ACCELERATOR\bin\powerbi-desktop-safe.cmd" capabilities "C:\Relatorios\Vendas.pbip" --task-id "revisao-vendas" --pid 1234
 ```
 
 Capturar incrementalmente:
 
 ```powershell
-& "$env:POWERBI_OPENCODE_ACCELERATOR\bin\powerbi-desktop-safe.cmd" capture-all "C:\Relatorios\Vendas.pbip" --pid 1234 --output-dir ".\screenshots" --total-seconds 20 --page-seconds 10
+& "$env:POWERBI_OPENCODE_ACCELERATOR\bin\powerbi-desktop-safe.cmd" capture-all "C:\Relatorios\Vendas.pbip" --task-id "revisao-vendas" --pid 1234 --output-dir ".\screenshots" --total-seconds 20 --page-seconds 10
 ```
 
 Registrar Save As manual e retomar:
 
 ```powershell
-$result = & "$env:POWERBI_OPENCODE_ACCELERATOR\bin\powerbi-desktop-safe.cmd" save-as "C:\Relatorios\Origem.pbix" "C:\Relatorios\Copia\Vendas.pbip" | ConvertFrom-Json
+$result = & "$env:POWERBI_OPENCODE_ACCELERATOR\bin\powerbi-desktop-safe.cmd" save-as "C:\Relatorios\Origem.pbix" "C:\Relatorios\Copia\Vendas.pbip" --task-id "conversao-vendas" --execution-mode attended | ConvertFrom-Json
 # Execute apenas a acao manual informada em $result.manualAction.
 & "$env:POWERBI_OPENCODE_ACCELERATOR\bin\powerbi-desktop-safe.cmd" resume $result.checkpointPath
-# Para PBIX, forneca o PID explicito para confirmar caminho atual e hasUnsavedChanges=false:
-& "$env:POWERBI_OPENCODE_ACCELERATOR\bin\powerbi-desktop-safe.cmd" resume $result.checkpointPath --pid 1234
+# Para PBIX, escolha o modo do novo alvo e forneca o PID explicito:
+& "$env:POWERBI_OPENCODE_ACCELERATOR\bin\powerbi-desktop-safe.cmd" resume $result.checkpointPath --pid 1234 --task-id "conversao-vendas" --execution-mode attended
 ```
 
-Estados estruturados esperados (`TARGET_NOT_READY`, `AMBIGUOUS_TARGET`, `HOST_BUSY`, `HOST_STATE_UNKNOWN`, `PARTIAL_TIMEOUT` e `UNSUPPORTED_CAPABILITY`) usam codigo de processo zero para que o OpenCode nao os transforme em erro opaco; o chamador deve ler `ok` e `status`. Erros de comando, argumento, destino ou lancamento usam codigo diferente de zero. O worker de status registra seu `exitCode` no diagnostico quando e interrompido, e stdout/stderr do adaptador nao sao redirecionados para o Desktop.
+Solicitar uma unica intervencao manual e retomar sem repetir o pedido:
+
+```powershell
+$refresh = & "$env:POWERBI_OPENCODE_ACCELERATOR\bin\powerbi-desktop-safe.cmd" request-refresh "C:\Relatorios\Vendas.pbip" --task-id "revisao-vendas" | ConvertFrom-Json
+# Somente depois de o usuario confirmar que concluiu:
+& "$env:POWERBI_OPENCODE_ACCELERATOR\bin\powerbi-desktop-safe.cmd" resume $refresh.checkpointPath --completed
+```
+
+`request-save` usa o mesmo fluxo e solicita Ctrl+S uma unica vez. Ambos sao bloqueados em background.
+
+Estados estruturados esperados (`EXECUTION_MODE_REQUIRED`, `FOCUS_POLICY_BLOCKED`, `TARGET_NOT_READY`, `AMBIGUOUS_TARGET`, `HOST_BUSY`, `HOST_STATE_UNKNOWN`, `PARTIAL_TIMEOUT` e `UNSUPPORTED_CAPABILITY`) usam codigo de processo zero para que o OpenCode nao os transforme em erro opaco; o chamador deve ler `ok` e `status`. Erros de comando, argumento, destino ou lancamento usam codigo diferente de zero. O worker de status registra seu `exitCode` no diagnostico quando e interrompido, e stdout/stderr do adaptador nao sao redirecionados para o Desktop.
 
 ## Retornos resumidos
 
@@ -121,8 +147,10 @@ Captura interrompida com resultado parcial:
 - A Bridge nao expoe engine/porta do Analysis Services. O adaptador nao usa descoberta interna nao documentada.
 - O Modeling MCP documenta descoberta por nome do arquivo, nao um handoff por Desktop PID. Antes de alteracoes, o agente deve verificar a identidade retornada pelo MCP; com varias instancias sem identidade inequivoca, deve parar.
 - Para PBIX, o adaptador pode provar apenas que um arquivo nao vazio apareceu; como a inspecao interna do pacote e proibida, retorna `DESTINATION_APPEARED` e exige confirmacao manual de que o Save terminou antes de novas operacoes de host. Para PBIP, valida os arquivos publicos do projeto e pode retornar `READY_TO_RESUME`.
-- Quando `resume` recebe um PID explicito para PBIX, `READY_TO_RESUME` exige evidencia publica simultanea: `currentFilePath` igual ao destino e `hasUnsavedChanges=false`. Sem essa evidencia, o estado permanece `MANUAL_CONFIRMATION_PENDING`; o adaptador nao abre, salva ou encerra o Desktop.
+- Quando `resume` recebe um PID explicito para PBIX, o destino e tratado como novo alvo e exige escolha propria ou checkpoint de modo ja existente. `READY_TO_RESUME` exige evidencia publica simultanea: `currentFilePath` igual ao destino e `hasUnsavedChanges=false`. Sem essa evidencia, o estado permanece `MANUAL_CONFIRMATION_PENDING`; o adaptador nao abre, salva ou encerra o Desktop.
 - O adaptador nao salva, encerra, recarrega ou atualiza sessoes automaticamente.
+- Capturas sempre representam a sessao Desktop. Cada item em `captures[]` preserva sua propria `sourceEvidence`; `diskAlignment=SESSION_DIFFERS_FROM_DISK` indica que aquela imagem nao comprova o conteudo do PBIP em disco. O agregado retorna `MIXED` quando uma retomada combina estados diferentes.
+- `capture-all` e classificado como background-safe porque usa somente a Bridge e nao contem chamada de ativacao de janela. A verificacao empirica de foco depende do roteiro real e permanece pendente quando ja existe outra instancia Desktop.
 - Falha visual nao invalida testes de arquivo independentes.
 
 ## Atualizacao e rollback
@@ -145,7 +173,7 @@ Os checkpoints ficam em `%LOCALAPPDATA%\PowerBI-OpenCode-Accelerator` e nao cont
 
 ## Validacao real descartavel
 
-O repositorio inclui `tests/Invoke-LiveDesktopValidation.ps1`. O script recusa executar se qualquer `PBIDesktop.exe` ja existir, abre o PBIP uma unica vez, confirma caminho/PID/Bridge, verifica que engine e MCP continuam separados, captura uma pagina com `--max-pages 1` e retoma somente as paginas pendentes. Ele nunca salva, recarrega, atualiza, encerra processos ou aceita uma Bridge alheia.
+O repositorio inclui `tests/Invoke-LiveDesktopValidation.ps1`. O script recusa executar se qualquer `PBIDesktop.exe` ja existir na sessao interativa atual, ignora processos de outras sessoes, abre o PBIP uma unica vez em modo acompanhado, confirma caminho/PID/Bridge, muda explicitamente o checkpoint para background e pede que o operador mantenha o terminal em primeiro plano. Ele compara a janela em foco antes e depois da captura incremental. O script nunca salva, recarrega, atualiza, encerra processos, ativa janelas ou aceita uma Bridge alheia.
 
 ```powershell
 & ".\tests\Invoke-LiveDesktopValidation.ps1" -ProjectPath "C:\caminho-descartavel\VendasDemo"

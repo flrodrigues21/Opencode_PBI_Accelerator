@@ -8,4 +8,9 @@ if "%1 %2"=="debug config" (
   exit /b 0
 )
 if not "%OPENCODE_CAPTURE%"=="" copy /y "%OPENCODE_CONFIG%" "%OPENCODE_CAPTURE%" >nul
+if not "%OPENCODE_ENV_CAPTURE%"=="" (
+  >"%OPENCODE_ENV_CAPTURE%" echo %POWERBI_EXECUTION_TASK_ID%
+  >>"%OPENCODE_ENV_CAPTURE%" echo %POWERBI_EXECUTION_MODE%
+  >>"%OPENCODE_ENV_CAPTURE%" echo %POWERBI_INTERACTIVE_SESSION_ID%
+)
 exit /b 0

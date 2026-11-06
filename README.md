@@ -1,250 +1,141 @@
-# Power BI + OpenCode Accelerator (Windows, local)
+# Power BI + OpenCode Accelerator
 
-Acelerador independente para trabalhar com projetos Power BI PBIP/PBIR/TMDL no OpenCode. O padrão é local e orientado a arquivos: não habilita Fabric, Power BI Service, OAuth, publicação nem MCP remoto.
+[**Português**](README.md) | [English](README.en.md)
 
-> Projeto não oficial, sem afiliação ou endosso da Microsoft, OpenCode ou Anomaly. Consulte [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+O Accelerator prepara o OpenCode para criar, validar e operar projetos Power BI PBIP/PBIR/TMDL locais com segurança, voltado a analistas e desenvolvedores de BI que querem combinar automação por arquivos com intervenções controladas no Desktop.
 
-## Componentes
+> Projeto não oficial, sem afiliação ou endosso da Microsoft, OpenCode ou Anomaly. Consulte os [avisos de terceiros](THIRD_PARTY_NOTICES.md).
 
-| Camada | Função | Padrão |
-|---|---|---|
-| Skills | Instruções Markdown descobertas pelo OpenCode | Habilitadas |
-| Comando `/demo-powerbi` | Cria uma cópia independente da demo distribuída | Habilitado |
-| CLIs npm | Validação/autoria PBIR e comunicação com Desktop | Instaladas localmente |
-| Power BI Modeling MCP | Ferramentas de modelagem contra Desktop/modelo local | Desabilitado; opt-in |
+## Início rápido
 
-Skills não são executáveis. As CLIs são processos locais. MCP é um servidor de ferramentas separado e exige configuração explícita no cliente.
-
-### `powerbi-authoring` e `fabric-skills`
-
-O instalador copia somente o plugin oficial `plugins/powerbi-authoring`, adequado ao fluxo local Power BI:
-
-- `powerbi-report-cli`: planejar, desenhar, editar e validar relatórios;
-- `semantic-model-authoring`: TMDL, DAX e modelos semânticos;
-- `common/`: dependências relativas usadas pelas skills.
-
-O bundle `fabric-skills` é diferente: inclui skills, agentes e MCPs hospedados para workloads Fabric. Ele não é instalado por padrão e não é necessário para PBIP local.
-
-As skills próprias `rode-o-bpa`, `check-updates` e `powerbi-desktop-safe` continuam instaladas. Skills desconhecidas já existentes em `<InstallRoot>\skills` não são removidas.
-
-## Versões Fixadas
-
-| Componente | Versão/SHA |
-|---|---|
-| `microsoft/skills-for-fabric` | tag `v0.3.19`, SHA `bc42aaf734771bf752c1d7082dd91e5a6ca72b9f` |
-| `@microsoft/powerbi-report-authoring-cli` | `0.5.0` (Node `>=20`) |
-| `@microsoft/powerbi-desktop-bridge-cli` | `1.0.0` (Node `>=20`) |
-| `@microsoft/powerbi-modeling-mcp` | `1.0.0` (Node `>=18`) |
-
-Origem do SHA: branch `main` e tag `v0.3.19` do repositório oficial Microsoft, verificadas em 26/10/2026.
-
-O pin anterior, `ac156d284ab8e51f121af3f42303ea79c88cdab5`, antecedia 15 commits e as releases `v0.3.13` a `v0.3.19`. A mudança mais relevante para este projeto é a consolidação das quatro skills antigas de relatório em `powerbi-report-cli`. O `.mcp.json` oficial ainda usa `@latest`; o acelerador não o importa e fixa o MCP em `1.0.0`.
-
-Comparação oficial: <https://github.com/microsoft/skills-for-fabric/compare/ac156d284ab8e51f121af3f42303ea79c88cdab5...bc42aaf734771bf752c1d7082dd91e5a6ca72b9f>
-
-## Requisitos
-
-Fluxo local:
-
-- Windows PowerShell 5.1 ou superior;
-- Git;
-- Node.js 20 ou superior, com npm;
-- OpenCode;
-- Power BI Desktop apenas para testar a bridge ou validar visualmente;
-- Tabular Editor apenas para executar BPA.
-
-Azure CLI, login Azure, workspace, capacidade/licença Fabric e Power BI Service não são exigidos para o fluxo exclusivo por arquivos. Esses requisitos só se aplicam se o usuário decidir trabalhar com recursos cloud, fora do escopo padrão deste acelerador.
-
-## Início Rápido: Clonar E Pedir Uma Demo
-
-Pré-requisitos reais: Windows PowerShell 5.1+, Git, Node.js 20+ com npm e OpenCode. Power BI Desktop é necessário somente para abrir e conferir o relatório. A instalação usa rede para Git/npm, e o OpenCode precisa de rede quando configurado com um provedor LLM cloud. Azure, Fabric, Power BI Service, credenciais de cliente e gateway não são necessários.
-
-No PowerShell:
+No Windows PowerShell:
 
 ```powershell
 git clone https://github.com/flrodrigues21/Opencode_PBI_Accelerator.git
 Set-Location ".\Opencode_PBI_Accelerator"
 Set-ExecutionPolicy -Scope Process Bypass
-& ".\Install-PowerBI-OpenCodeAccelerator.ps1" -InstallRoot "C:\OpenCode\PowerBI-Accelerator"
-& "C:\OpenCode\PowerBI-Accelerator\bin\Start-PowerBI-OpenCode.ps1" -InstallRoot "C:\OpenCode\PowerBI-Accelerator" -ProjectPath (Get-Location).Path
+
+& ".\Install-PowerBI-OpenCodeAccelerator.ps1" `
+  -InstallRoot "C:\OpenCode\PowerBI-Accelerator"
+
+& "C:\OpenCode\PowerBI-Accelerator\bin\Start-PowerBI-OpenCode.ps1" `
+  -InstallRoot "C:\OpenCode\PowerBI-Accelerator" `
+  -ProjectPath (Get-Location).Path
 ```
 
-No OpenCode, execute `/demo-powerbi`. Sem argumento, o destino seguro é `VendasDemo-Demo` dentro da pasta atual; se ele já existir, o comando pede outro caminho e nunca sobrescreve a pasta. Também é possível informar um destino novo:
+No OpenCode, crie a primeira cópia independente da demo:
 
 ```text
-/demo-powerbi "C:\Power BI Demos\Minha VendasDemo"
+/demo-powerbi
 ```
 
-Ou use este prompt pronto:
-
-> Crie uma demo Power BI do zero com dados fictícios, usando o exemplo VendasDemo e as skills deste acelerador. Prepare uma cópia independente, valide os arquivos e me diga qual PBIP abrir.
-
-A fonte canônica está em [`examples/VendasDemo`](examples/VendasDemo). A cópia contém 120 vendas e espera 360 unidades, receita de R$ 720.000,00, custo de R$ 503.400,00, lucro de R$ 216.600,00 e margem de 30,0833%. O comando valida arquivos, referências relativas e totais; quando a CLI está instalada, também valida PBIR. Ele não declara carregamento ou validação visual.
-
-Abra o `VendasDemo.pbip` informado pelo comando no Power BI Desktop. Como a cópia não distribui cache local, na primeira abertura o Desktop pode mostrar as tabelas sem dados; nesse caso, execute uma única atualização manual, confira a página `Visão Geral` e salve. Todos os dados são fictícios e autocontidos em Power Query M com `#table`: nenhuma fonte externa, dado de cliente, credencial, cloud ou publicação é usada.
-
-## Instalar Ou Atualizar
-
-No PowerShell 5.1:
+O destino padrão é `VendasDemo-Demo`; uma pasta existente nunca é sobrescrita. Para preparar o projeto gerado e escolher como abrir o Desktop:
 
 ```powershell
-Set-ExecutionPolicy -Scope Process Bypass
-& ".\Install-PowerBI-OpenCodeAccelerator.ps1" -InstallRoot "C:\OpenCode\PowerBI-Accelerator"
+& "C:\OpenCode\PowerBI-Accelerator\bin\Start-PowerBI-OpenCode.ps1" `
+  -InstallRoot "C:\OpenCode\PowerBI-Accelerator" `
+  -ProjectPath ".\VendasDemo-Demo" `
+  -OpenDesktop
 ```
 
-O mesmo comando faz instalação limpa ou atualização idempotente. Antes de alterar a instalação funcional, ele:
+O launcher pergunta se a tarefa deve ser executada acompanhada ou em background. A demo contém dados fictícios autocontidos e totais verificáveis; veja a [documentação da VendasDemo](examples/VendasDemo/README.md).
 
-1. baixa o SHA fixado em uma pasta temporária;
-2. valida manifests, skills completas, frontmatter, `common`, links relativos e versões npm;
-3. executa `npm ci` no staging;
-4. salva inventário e backup dos arquivos gerenciados;
-5. aplica o payload e executa rollback automático se a troca falhar.
+## Modos de execução
 
-Arquivos pessoais e skills não gerenciadas são preservados. Uma colisão desconhecida interrompe a instalação; `-Force` só deve ser usado após revisão e preserva o destino anterior no backup. `-SkipNpmInstall` existe para testes controlados e não deve ser usado em uma atualização normal.
+| Modo | Quando usar | O que funciona | Intervenção do usuário |
+|---|---|---|---|
+| **Acompanhar na tela** | Abertura inicial, refresh, salvamento ou inspeção visual | Abre o PBIP, resolve caminho/PID/sessão e permite consultas e capturas pela Bridge | Refresh, `Ctrl+S` e Save As continuam manuais e são pedidos somente quando necessários |
+| **Background** | Validação por arquivos e consultas seguras enquanto você usa outra janela | Trabalho offline, `resolve`, capabilities e captura Bridge de um alvo já aberto | Nenhuma para operações permitidas; para abrir, atualizar ou salvar, altere explicitamente para o modo acompanhado |
 
-Backups ficam em `<InstallRoot>\backups`. O comando exato de rollback é impresso ao final. Para restaurar o backup mais recente:
+Background bloqueia `open`, refresh, Save, Save As e qualquer operação cujo comportamento de foco não esteja classificado. Ele não automatiza mouse, teclado, diálogos ou ativação de janela.
+
+## Comportamento validado
+
+- A descoberta considera somente processos Power BI da sessão interativa do Windows; caminho, PID e `SessionId` precisam corresponder.
+- Operações Bridge permitidas em background preservaram a janela em primeiro plano no smoke test real.
+- Capturas multipágina e intervenções manuais usam checkpoints; trabalho já concluído não é repetido na retomada.
+- Refresh e `Ctrl+S` são solicitados uma única vez por checkpoint e só são marcados como concluídos após confirmação explícita.
+- A Bridge 1.0.0 não fornece Save, Save As nem exportação PBIX/PBIP completa; essas ações não são anunciadas como automáticas.
+
+Detalhes, estados estruturados e solução de problemas estão em [Integração segura com Power BI Desktop](docs/POWERBI-DESKTOP-INTEGRATION.md).
+
+## Pré-requisitos e versões testadas
+
+| Componente | Requisito mínimo ou escopo | Versão testada nesta branch |
+|---|---|---|
+| Windows | Windows com PowerShell 5.1 e suporte a junctions | Windows 11, build `26100` |
+| Windows PowerShell | `5.1+` | `5.1.26100.33648` |
+| Git for Windows | Obrigatório; sem versão mínima fixada | `2.55.0.windows.3` |
+| Node.js | `20+` | `24.15.0` |
+| npm | Incluído com o Node.js | `11.12.1` |
+| OpenCode | Obrigatório; sem versão mínima fixada | `1.19.4` |
+| Power BI Desktop | Opcional para arquivos; obrigatório para Bridge e validação visual | `2.159.883.0 (26.10)` |
+| Tabular Editor | Opcional, somente para BPA | Não exercitado no smoke desta branch |
+
+Instalação e atualização precisam de rede para Git e npm. Azure CLI, login Azure, Fabric, Power BI Service, gateway e credenciais de cliente não são necessários no fluxo local por arquivos. Um provedor LLM cloud pode exigir rede separadamente.
+
+### Dependências fixadas
+
+| Componente | Versão |
+|---|---|
+| `microsoft/skills-for-fabric` | `v0.3.19`, SHA `bc42aaf734771bf752c1d7082dd91e5a6ca72b9f` |
+| `@microsoft/powerbi-report-authoring-cli` | `0.5.0` |
+| `@microsoft/powerbi-desktop-bridge-cli` | `1.0.0` |
+| `@microsoft/powerbi-modeling-mcp` | `1.0.0` |
+
+O instalador usa somente o plugin oficial `plugins/powerbi-authoring` necessário ao fluxo local e mantém o Modeling MCP desabilitado por padrão.
+
+## Exemplo com dados públicos
+
+O smoke manual criou duas cópias descartáveis de um dashboard do **Programa Mais Médicos**, com indicador, evolução temporal, comparação por UF e filtros. A fonte foi transformada fora do Git e os totais do período mais recente foram conferidos diretamente no CSV bruto e no agregado: Brasil `26.646` e São Paulo `3.394`.
+
+O cenário validou os dois modos, isolamento por sessão, foco, refresh manual, `Ctrl+S`, persistência após reabrir e retomada por checkpoint. Downloads, PBIPs, caches e screenshots não são versionados.
+
+Para repetir com outra fonte pública, siga [`tests/manual/powerbi-open-data-smoke.md`](tests/manual/powerbi-open-data-smoke.md).
+
+## Como o projeto é composto
+
+| Linguagem/formato | Papel no projeto |
+|---|---|
+| PowerShell | Instalador transacional, rollback, launcher, diagnóstico, preparação da demo e testes de integração |
+| JavaScript (Node.js ES modules) | Adaptador da Desktop Bridge, política de foco, identidade do alvo, checkpoints e testes unitários |
+| Windows Batch | Wrappers mínimos para os comandos instalados e fixtures de processo |
+| Markdown | READMEs, skills, comandos OpenCode, template de agentes e roteiros manuais |
+| TMDL, DAX e Power Query M | Modelo semântico, medidas e dados autocontidos da demo Power BI |
+| JSON/PBIR/PBIP | Metadados do relatório, manifests, regras, fixtures e definições de projeto Power BI |
+
+## Arquitetura e limites
+
+- O instalador valida o payload em staging, executa `npm ci`, cria inventário e backup e faz rollback automático em falha de aplicação.
+- O bootstrap cria junctions de `.opencode/skills` e `.opencode/common`, adiciona `/demo-powerbi` quando ausente e preserva `AGENTS.md`, comandos e configurações existentes.
+- O fluxo padrão é local e orientado a arquivos. Fabric, publicação, OAuth e MCP remoto ficam fora do escopo.
+- O Modeling MCP local é opt-in com `-EnableModelingMcp`; o launcher usa configuração temporária e não altera `opencode.json` ou `opencode.jsonc`.
+- Validação estática, Bridge conectada, modelo carregado e resultado visual são evidências distintas.
+
+Para atualizar, execute novamente o instalador. Backups ficam em `<InstallRoot>\backups`; o comando de rollback é impresso ao final e também está disponível em `Restore-PowerBI-OpenCodeAccelerator.ps1`.
+
+## Documentação
+
+- [Integração Desktop, comandos e solução de problemas](docs/POWERBI-DESKTOP-INTEGRATION.md)
+- [Demo distribuída e totais esperados](examples/VendasDemo/README.md)
+- [Roteiro manual com dados públicos](tests/manual/powerbi-open-data-smoke.md)
+- [Comando OpenCode `/demo-powerbi`](.opencode/commands/demo-powerbi.md)
+- [Avisos e licenças de terceiros](THIRD_PARTY_NOTICES.md)
+
+## Testes
 
 ```powershell
-& "C:\OpenCode\PowerBI-Accelerator\Restore-PowerBI-OpenCodeAccelerator.ps1" -InstallRoot "C:\OpenCode\PowerBI-Accelerator"
-```
-
-## OpenCode
-
-O OpenCode descobre skills em `.opencode/skills/<nome>/SKILL.md` e comandos em `.opencode/commands/<nome>.md`. O repositório já expõe `/demo-powerbi`; o bootstrap copia esse comando para projetos preparados somente quando não existe um comando de mesmo nome. Comandos personalizados nunca são substituídos.
-
-O bootstrap cria junctions apenas para skills e dependências comuns:
-
-```text
-<projeto>\.opencode\skills -> <InstallRoot>\skills
-<projeto>\.opencode\common -> <InstallRoot>\common
-```
-
-Isso mantém válidas referências como `../../common/COMMON-CLI.md`. `AGENTS.md`, `opencode.json`, `opencode.jsonc` e comentários JSONC existentes são preservados. O acelerador não faz merge por regex nem reserializa configurações pessoais.
-
-### Execução Backend Primeiro
-
-O `AGENTS.md` criado para projetos novos orienta o OpenCode a priorizar arquivos, scripts, CLIs, APIs locais e consultas programáticas. A interface do Power BI Desktop fica reservada para operações que dependem dela, preferencialmente em um único lote final após as validações por arquivos.
-
-Essa política também exige:
-
-- progresso verificável no terminal com `[ETAPA x/y]`, `[OK]`, `[AVISO]` e `[PRÓXIMO]`;
-- timeout explícito e no máximo uma nova tentativa para comandos externos, bridge e MCP;
-- nenhuma finalização de processos do Desktop para destravar automação;
-- preservação de alterações não salvas antes de qualquer reload;
-- distinção entre arquivos gerados, estrutura validada, consultas executadas e resultado visual conferido.
-
-O bootstrap preserva um `AGENTS.md` já existente. Portanto, a política vale automaticamente para projetos novos; em projetos já inicializados, incorpore a seção `Execução Backend Primeiro` do template sem remover instruções locais.
-
-Para preparar e abrir um projeto existente:
-
-```powershell
-& "C:\OpenCode\PowerBI-Accelerator\bin\Start-PowerBI-OpenCode.ps1" -InstallRoot "C:\OpenCode\PowerBI-Accelerator" -ProjectPath "C:\caminho\Projeto"
-```
-
-Se `.opencode\skills` ou `.opencode\common` já forem diretórios reais ou links para outro destino, o bootstrap para. `-Force` move diretórios reais para backup ou recria somente a junction; nunca altera o destino antigo.
-
-Para criar a demo sem entrar no OpenCode, o mesmo backend usado pelo comando está disponível diretamente. O destino deve ser novo:
-
-```powershell
-& "C:\OpenCode\PowerBI-Accelerator\bin\Test-PowerBI-OpenCodeAccelerator.ps1" -InstallRoot "C:\OpenCode\PowerBI-Accelerator" -ProjectPath (Get-Location).Path -PrepareDemo -DemoDestination "C:\Power BI Demos\Minha VendasDemo"
-```
-
-## MCP Local Opt-In
-
-O OpenCode não importa automaticamente o `.mcp.json` de plugins Claude/Copilot. Por isso o MCP permanece desligado no fluxo por arquivos.
-
-Para iniciar o OpenCode com o Modeling MCP local somente nessa sessão:
-
-```powershell
-& "C:\OpenCode\PowerBI-Accelerator\bin\Start-PowerBI-OpenCode.ps1" -InstallRoot "C:\OpenCode\PowerBI-Accelerator" -ProjectPath "C:\caminho\Projeto" -EnableModelingMcp
-```
-
-O script gera uma configuração temporária no formato OpenCode, com `type: local`, `command` em array, `enabled: true` e timeout de 30 segundos. Nenhum `opencode.json/jsonc` é alterado. Se `OPENCODE_CONFIG` já estiver definido, o script para para não substituir a configuração do usuário.
-
-O MCP pode exigir aceite da EULA Microsoft. Para conexão com Desktop, abra o Power BI Desktop e o modelo desejado. Não registre simultaneamente MCP local e remoto com ferramentas sobrepostas.
-
-## Abertura E Captura Seguras
-
-O Accelerator inclui um adaptador sobre a biblioteca oficial da Desktop Bridge. Ele evita o `open` longo que pode ultrapassar o timeout do OpenCode, não aceita a primeira Bridge como substituta e persiste checkpoints em `%LOCALAPPDATA%\PowerBI-OpenCode-Accelerator`.
-
-```powershell
-& "$env:POWERBI_OPENCODE_ACCELERATOR\bin\powerbi-desktop-safe.cmd" open "C:\Relatorios\Vendas.pbix" --wait-seconds 15
-& "$env:POWERBI_OPENCODE_ACCELERATOR\bin\powerbi-desktop-safe.cmd" resolve "C:\Relatorios\Vendas.pbix"
-```
-
-`READY` exige evidência de caminho retornada pela instância. `OPENING` ou `TARGET_NOT_READY` não provam falha e não autorizam repetir `open`. `AMBIGUOUS_TARGET` exige `--pid` antes de captura ou alteração.
-
-Captura de todas as páginas é incremental, serial e limitada por prazo:
-
-```powershell
-& "$env:POWERBI_OPENCODE_ACCELERATOR\bin\powerbi-desktop-safe.cmd" capture-all "C:\Relatorios\Vendas.pbip" --pid 1234 --output-dir ".\screenshots" --total-seconds 20 --page-seconds 10
-```
-
-Para validar primeiro uma única página e depois retomar as restantes, acrescente `--max-pages 1` na primeira chamada.
-
-Páginas concluídas permanecem no disco e no checkpoint. Uma página em voo no timeout recebe `OPERATION_STATE_UNKNOWN`, mantém o PID em quarentena e não é repetida automaticamente, pois a API não expõe cancelamento nem ID da operação. Falha visual não bloqueia validações offline independentes. Após o PID antigo terminar, uma resolução explícita para um novo PID permite continuar somente páginas pendentes.
-
-A Bridge 1.0.0 não expõe Save, Save As ou exportação PBIX/PBIP completa. A documentação Microsoft informa que a conversão PBIX↔PBIP exige `File > Save as` no Desktop. O adaptador retorna `UNSUPPORTED_CAPABILITY`, uma única ação manual e um checkpoint de retomada. ExportTMDL do Modeling MCP cobre apenas metadados do modelo, não o relatório completo.
-
-Para Save As em PBIX, `resume <checkpoint> --pid <pid>` só retorna `READY_TO_RESUME` quando o estado público do Desktop confirma simultaneamente o caminho de destino e `hasUnsavedChanges=false`. Caso contrário, exige confirmação manual.
-
-Diagnóstico, exemplos de JSON, causas e limites da seleção MCP estão em [docs/POWERBI-DESKTOP-INTEGRATION.md](docs/POWERBI-DESKTOP-INTEGRATION.md).
-
-## Smoke Test Seguro
-
-O padrão é somente diagnóstico e não altera o projeto:
-
-```powershell
-& "C:\OpenCode\PowerBI-Accelerator\bin\Test-PowerBI-OpenCodeAccelerator.ps1" -InstallRoot "C:\OpenCode\PowerBI-Accelerator" -ProjectPath "C:\caminho\Projeto"
-```
-
-Para testar a bridge opcionalmente, com duas tentativas e timeout explícito:
-
-```powershell
-& "C:\OpenCode\PowerBI-Accelerator\bin\Test-PowerBI-OpenCodeAccelerator.ps1" -InstallRoot "C:\OpenCode\PowerBI-Accelerator" -ProjectPath "C:\caminho\Projeto" -TestBridge -BridgeTimeoutSeconds 5 -BridgeAttempts 2
-```
-
-Se a bridge estiver indisponível, o diagnóstico continua pelas validações de arquivos. O script não encerra o Power BI Desktop, não executa refresh, reload ou screenshot e diferencia:
-
-- `arquivo validado`: validação estática concluída;
-- `bridge conectada` ou `bridge unavailable`: estado do processo local;
-- `validacao visual not executed`: nenhuma evidência visual foi produzida.
-
-Para preparar uma cópia isolada, o destino deve ser novo:
-
-```powershell
-& "C:\OpenCode\PowerBI-Accelerator\bin\Test-PowerBI-OpenCodeAccelerator.ps1" -InstallRoot "C:\OpenCode\PowerBI-Accelerator" -ProjectPath "C:\Relatorios\Projeto" -PrepareCopy -CopyDestination "C:\Relatorios\Projeto-Smoke"
-```
-
-O conteúdo PBIP/PBIR/TMDL original é copiado sem alteração; somente a cópia recebe junctions, `AGENTS.md` quando ausente e atalhos. Fontes, credenciais, relacionamentos, medidas e dados não são modificados.
-
-## Limites Offline
-
-- Instalação e atualização precisam de rede para Git e npm.
-- Depois da instalação, skills e CLIs ficam locais.
-- O Modeling MCP instalado localmente não é um serviço remoto, mas pode depender do Desktop/modelo aberto.
-- OpenCode ainda precisa de rede se o provedor LLM for cloud. Operação totalmente offline exige um provedor local já configurado.
-- Validação de arquivos não equivale a bridge conectada nem a validação visual no Desktop.
-
-## Testes Do Repositório
-
-```powershell
+node --test ".\tests\powerbi-desktop-safe.test.mjs"
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\tests\Run-Tests.ps1"
 git diff --check
 ```
 
-Os testes usam fixtures e pastas temporárias; não acessam relatórios do usuário. Um teste real no Desktop continua sendo manual.
+Na branch `feat/powerbi-execution-modes`, foram validados 36 testes Node, a suíte transacional completa e o smoke real no Windows descrito acima.
 
-## Referências Oficiais
+## Contribuição
 
-- <https://learn.microsoft.com/pt-br/fabric/fundamentals/skills-for-fabric-install>
-- <https://github.com/microsoft/skills-for-fabric>
-- <https://github.com/microsoft/powerbi-modeling-mcp>
-- <https://opencode.ai/docs/skills/>
-- <https://opencode.ai/docs/commands/>
-- <https://opencode.ai/docs/mcp-servers/>
-- <https://learn.microsoft.com/en-us/power-bi/developer/projects/projects-overview>
+Abra uma [issue](https://github.com/flrodrigues21/Opencode_PBI_Accelerator/issues) para bugs ou propostas. Para contribuir com código, crie uma branch, mantenha artefatos locais fora do Git, execute os testes acima e envie um pull request com escopo e evidências de validação claros.
 
-## Licenças
+## Licença
 
-Código deste projeto: [MIT](LICENSE). Componentes Microsoft mantêm suas atribuições e licenças em [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) e `third-party/`.
+Código deste projeto: [MIT](LICENSE). Componentes Microsoft mantêm suas atribuições em [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) e em [`third-party/`](third-party/).
