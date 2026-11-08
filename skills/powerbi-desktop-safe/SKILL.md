@@ -46,6 +46,56 @@ Use a stable, non-secret task ID. Pass the choice on the first command as `--tas
 - Use `--new-attempt` only after explicit evidence that the previous launch failed.
 - A shell timeout is not proof that Desktop failed to open.
 
+## PBIR edit batches
+
+Before the first PBIR write for a target, run:
+
+```powershell
+& "$env:POWERBI_OPENCODE_ACCELERATOR\bin\powerbi-desktop-safe.cmd" prepare-pbir-edit "C:\Reports\Sales.pbip" --task-id "sales-review" --execution-mode attended
+```
+
+- `PBIR_EDIT_OFFLINE_READY` means the target was not observed in the current interactive session. Finish and validate the whole disk batch before opening Desktop. If `CROSS_SESSION_INSTANCES_IGNORED` is reported, first confirm that no other Windows session owns this project.
+- `PBIR_EDIT_TARGET_OPEN` means the exact target is already open. Tell the user that one external-change apply may be needed after the disk batch, not after every edit.
+- Reuse the returned PBIR checkpoint for that batch. Do not create a new checkpoint per file or visual.
+- Complete PBIR edits and file validation before requesting any Desktop action.
+- Only one task may own an active PBIR batch for a target, including while it is `READY_TO_TEST`. Never work around `PBIR_EDIT_OWNED_BY_ANOTHER_TASK` with a different task ID. After successful interaction testing, release ownership with `complete-pbir-review <checkpoint> --tested`. Use `--new-batch` only when the same task intentionally abandons and replaces its current review.
+
+After the PBIR CLI validation succeeds, mark that exact disk batch validated:
+
+```powershell
+& "$env:POWERBI_OPENCODE_ACCELERATOR\bin\powerbi-desktop-safe.cmd" complete-pbir-edit <checkpoint.json> --task-id "sales-review" --validated
+```
+
+Without `--validated`, the workflow remains `BATCH_VALIDATION_REQUIRED`. Use `prepare-pbir-edit ... --new-batch` only to explicitly supersede an abandoned batch. It creates a distinct checkpoint and atomically switches the target's authoritative owner pointer; the old status is marked `SUPERSEDED` on a best-effort basis. Stale commands still return `BATCH_SUPERSEDED` with the current checkpoint path. Normal calls reuse the active checkpoint.
+
+Keep these states separate:
+
+1. **Confirmed external PBIP changes**: only after the external-change notice is positively identified, run `request-pbir-review <checkpoint> --notice-type external --notice-confirmed`. The returned action must name the file, reason, project window, and exact **Confirmar e aplicar** action.
+2. **Pending Power Query changes**: run `request-pbir-review <checkpoint> --notice-type power-query`. Resolve this state separately; never describe it as an external PBIR notice.
+3. **Unsaved Desktop session changes**: `hasUnsavedChanges=true` is evidence only for session work. It does not prove an external-change notice or a Power Query notice. Request `--notice-type session-unsaved --session-changes-need-save` only when new session work is known to require persistence.
+4. **Unknown notice type**: use `--notice-type unknown`. State that the type is unknown and issue neither Apply nor Ctrl+S guidance.
+5. **No notice**: use `--notice-type none`, then resume with the resolved PID. The batch becomes ready only after that target read succeeds.
+
+`request-pbir-review` is foreground-required and is blocked in background mode. Repeating it for the same batch returns the waiting checkpoint without repeating the user action.
+
+After the user completes the exact action, resume once:
+
+```powershell
+& "$env:POWERBI_OPENCODE_ACCELERATOR\bin\powerbi-desktop-safe.cmd" resume-pbir-review <checkpoint.json> --completed --pid 1234 --task-id "sales-review"
+```
+
+The resume performs one target read. A confirmed external apply or confirmed no-notice state returns `READY_TO_TEST`; resolving Power Query or session-save work returns to `BATCH_VALIDATED` so any remaining external notice can still be classified. Test interactions only after `READY_TO_TEST`. Do not reload again when the revision is already applied, and do not request Ctrl+S unless new session work is known to need persistence. Repeating the same resume does not read or reload the target again. If the read fails or uses the wrong PID, fix the cause and use `--retry-target-read` explicitly; never retry it automatically.
+
+After the revision, data, and interactions are visibly correct with no new notice, run:
+
+```powershell
+& "$env:POWERBI_OPENCODE_ACCELERATOR\bin\powerbi-desktop-safe.cmd" complete-pbir-review <checkpoint.json> --task-id "sales-review" --tested
+```
+
+Without `--tested`, ownership remains active and the command returns `INTERACTION_VALIDATION_REQUIRED`.
+
+Every PBIR continuation must pass the same explicit `--task-id`; a checkpoint path alone does not grant task ownership. If a command returns `PBIR_EDIT_STALE_LOCK`, verify that `staleOwnerPid` is absent and that no Accelerator process uses the target. Only then remove exactly `lockPath` and retry. Never delete or replace that lock automatically.
+
 ## Capabilities
 
 Run `capabilities <report> --pid <pid>` once for a resolved Desktop PID. Reuse its checkpoint for the session/version instead of probing repeatedly.
