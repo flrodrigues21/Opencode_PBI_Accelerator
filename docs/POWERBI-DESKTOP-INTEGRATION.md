@@ -57,6 +57,71 @@ Referencias:
 
 ## Comandos
 
+### Edicao PBIR em lote com o Desktop aberto
+
+Antes da primeira escrita no PBIR, registre se o alvo esta aberto sem abrir outra instancia:
+
+```powershell
+$edit = & "$env:POWERBI_OPENCODE_ACCELERATOR\bin\powerbi-desktop-safe.cmd" prepare-pbir-edit "C:\Relatorios\Vendas.pbip" --task-id "revisao-vendas" --execution-mode attended | ConvertFrom-Json
+```
+
+- `PBIR_EDIT_OFFLINE_READY`: o alvo nao foi observado na sessao interativa atual. Conclua e valide todo o lote em disco antes de abrir o Desktop. Se o resultado incluir `CROSS_SESSION_INSTANCES_IGNORED`, confirme primeiro que nenhuma outra sessao do Windows possui esse projeto aberto.
+- `PBIR_EDIT_TARGET_OPEN`: o alvo exato ja esta aberto; um unico aviso externo pode precisar ser aplicado depois do lote.
+- `PBIR_EDIT_STATE_UNKNOWN`: a Bridge nao conseguiu provar se o alvo esta aberto. Nao presuma que esta fechado.
+
+Somente uma tarefa pode manter um lote PBIR ativo por alvo. Outra `task-id` recebe `PBIR_EDIT_OWNED_BY_ANOTHER_TASK` e nao pode escrever ou substituir esse lote. A propriedade continua durante `READY_TO_TEST` e termina somente com `complete-pbir-review --tested`. Use `--new-batch` apenas para abandonar e substituir uma revisao ainda pertencente a mesma tarefa.
+
+Nao solicite confirmacao a cada arquivo. Depois de concluir as escritas e executar a validacao PBIR, marque o mesmo lote como validado:
+
+```powershell
+& "$env:POWERBI_OPENCODE_ACCELERATOR\bin\powerbi-desktop-safe.cmd" complete-pbir-edit $edit.checkpointPath --task-id "revisao-vendas" --validated
+```
+
+Sem `--validated`, o estado permanece `BATCH_VALIDATION_REQUIRED`. Uma preparacao repetida reutiliza o lote ativo sem consultar o Desktop novamente. `--new-batch` cria um checkpoint distinto e troca atomicamente o ponteiro de propriedade do alvo. O status auxiliar do checkpoint anterior e atualizado para `SUPERSEDED` quando possivel; mesmo se essa gravacao falhar, o ponteiro autoritativo faz comandos atrasados retornarem `BATCH_SUPERSEDED` com o caminho atual, sem alterar o lote novo.
+
+Classifique o aviso sem inferir seu tipo a partir de `hasUnsavedChanges`:
+
+```powershell
+# Somente depois de confirmar visualmente o aviso de alteracoes externas:
+$review = & "$env:POWERBI_OPENCODE_ACCELERATOR\bin\powerbi-desktop-safe.cmd" request-pbir-review $edit.checkpointPath --task-id "revisao-vendas" --notice-type external --notice-confirmed | ConvertFrom-Json
+
+# Alternativas separadas:
+# --notice-type power-query
+# --notice-type session-unsaved --session-changes-need-save
+# --notice-type unknown
+# --notice-type none
+```
+
+`hasUnsavedChanges=true` indica apenas trabalho nao salvo na sessao. Ele nao confirma aviso externo nem pendencia do Power Query. `session-unsaved` so pede `Ctrl+S` quando `--session-changes-need-save` declara que ha trabalho novo que precisa ser persistido. `unknown` informa que o tipo nao foi identificado e nao emite instrucao de Apply ou `Ctrl+S`. `none` retorna `TARGET_CONFIRMATION_REQUIRED`; retome com o PID resolvido para confirmar o alvo antes do teste. Em background, `request-pbir-review` retorna `FOCUS_POLICY_BLOCKED` e nao tenta resolver o aviso tomando o foco.
+
+Para o aviso externo confirmado, a unica orientacao emitida inclui o caminho, a janela do projeto, o motivo e a acao **Confirmar e aplicar**. Repetir o pedido para o mesmo lote retorna o checkpoint pendente sem repetir a orientacao.
+
+Depois que o operador concluir a acao exata, retome uma vez com o PID ja resolvido:
+
+```powershell
+& "$env:POWERBI_OPENCODE_ACCELERATOR\bin\powerbi-desktop-safe.cmd" resume-pbir-review $edit.checkpointPath --task-id "revisao-vendas" --completed --pid 1234
+```
+
+A retomada grava a tentativa antes de consultar a Bridge, relê o alvo uma unica vez e nunca executa reload. Um aviso externo concluido ou `none` confirmado retorna `READY_TO_TEST`; Power Query ou save da sessao retorna a `BATCH_VALIDATED` para que um aviso externo ainda pendente possa ser classificado. Repetir a mesma retomada nao relê o alvo e nao pede `Ctrl+S` por reflexo.
+
+Depois de confirmar visualmente a revisao, os dados e as interacoes sem outro aviso, conclua a revisao e libere a propriedade do alvo:
+
+```powershell
+& "$env:POWERBI_OPENCODE_ACCELERATOR\bin\powerbi-desktop-safe.cmd" complete-pbir-review $edit.checkpointPath --task-id "revisao-vendas" --tested
+```
+
+Sem `--tested`, o comando retorna `INTERACTION_VALIDATION_REQUIRED`. Um checkpoint `COMPLETE` nao bloqueia uma tarefa posterior.
+
+Todas as continuacoes PBIR exigem explicitamente a mesma `--task-id`; possuir apenas o caminho do checkpoint nao concede a propriedade da tarefa.
+
+Um processo encerrado durante uma transicao pode deixar `PBIR_EDIT_STALE_LOCK`. O resultado informa `lockPath` e `staleOwnerPid`. Confirme no sistema operacional que esse PID nao existe e que nenhum processo do Accelerator usa o alvo; somente depois remova exatamente o arquivo indicado em `lockPath` e repita o comando. O adaptador nunca remove esse lock automaticamente, evitando uma corrida com um novo proprietario.
+
+Se essa leitura falhar ou usar um PID incorreto, a retomada grava `TARGET_READ_FAILED` ou `TARGET_NOT_READY` e nao tenta novamente automaticamente. Depois de corrigir a Bridge ou o PID, permita uma unica nova leitura de recuperacao explicitamente:
+
+```powershell
+& "$env:POWERBI_OPENCODE_ACCELERATOR\bin\powerbi-desktop-safe.cmd" resume-pbir-review $edit.checkpointPath --task-id "revisao-vendas" --completed --pid 1234 --retry-target-read
+```
+
 Abrir sem confundir timeout com falha:
 
 ```powershell

@@ -9,12 +9,18 @@ import {
   FileStateStore,
   authorizeExecution,
   captureAll,
+  completePbirEditBatch,
+  completePbirReview,
   confirmPbixSaveWithDesktop,
+  inspectPbirEditCheckpoint,
   inspectCapabilities,
   openTarget,
+  preparePbirEdit,
   requestManualIntervention,
+  requestPbirReviewIntervention,
   resolveTarget,
   resumeCheckpoint,
+  resumePbirReview,
   unsupportedSaveAs,
 } from "../lib/powerbi-desktop-safe.mjs";
 
@@ -32,8 +38,8 @@ function parseArguments(values) {
       options.newAttempt = true;
       continue;
     }
-    if (name === "completed") {
-      options.completed = true;
+    if (["completed", "new-batch", "notice-confirmed", "retry-target-read", "session-changes-need-save", "tested", "validated"].includes(name)) {
+      options[name] = true;
       continue;
     }
     if (index + 1 >= values.length) throw new Error(`Missing value for --${name}.`);
@@ -135,13 +141,13 @@ function desktopProcessSessions() {
 }
 
 async function loadRuntime(requestedSessionId) {
+  const sessionId = interactiveSessionId(requestedSessionId);
   const installRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   const modulePath = path.join(installRoot, "node", "node_modules", "@microsoft", "powerbi-desktop-bridge-cli", "dist", "index.js");
   if (!fs.existsSync(modulePath)) throw new Error(`Desktop Bridge library not found: ${modulePath}`);
   const bridge = await import(pathToFileURL(modulePath).href);
   const statusWorkerPath = path.join(installRoot, "bin", "bridge-status-worker.mjs");
   const packageJson = JSON.parse(fs.readFileSync(path.join(path.dirname(modulePath), "..", "package.json"), "utf8"));
-  const sessionId = interactiveSessionId(requestedSessionId);
   return {
     bridgeVersion: packageJson.version,
     platform: process.platform,
@@ -206,10 +212,21 @@ async function readDesktopStatusBounded(statusWorkerPath, options = {}, sessionI
     { ...options, pid: candidate.pid, waitMs: Math.min(timeoutMs, Math.max(0, options.waitMs ?? 0)) },
     timeoutMs,
   )));
-  return {
-    instances: results.flatMap((result, index) => result.instances
+  const instances = results.flatMap((result, index) => result.instances
       .filter((instance) => Number(instance.pid) === candidates[index].pid)
-      .map((instance) => ({ ...instance, sessionId }))),
+      .map((instance) => ({ ...instance, sessionId })));
+  const unresolvedCandidates = candidates.filter((candidate) =>
+    !instances.some((instance) => Number(instance.pid) === candidate.pid)
+  );
+  if (unresolvedCandidates.length > 0) {
+    diagnostics.push({
+      code: "DESKTOP_BRIDGE_UNAVAILABLE",
+      message: `${unresolvedCandidates.length} Power BI Desktop process(es) in the interactive session could not be identified through the Bridge.`,
+      details: unresolvedCandidates.map((candidate) => ({ pid: candidate.pid, sessionId: candidate.sessionId })),
+    });
+  }
+  return {
+    instances,
     diagnostics: [...diagnostics, ...results.flatMap((result) => result.diagnostics ?? [])],
   };
 }
@@ -315,7 +332,7 @@ function reportTarget(value, allowedExtensions) {
 }
 
 function requirePositionals(positional, count, usage) {
-  if (positional.length < count) throw new Error(`Usage: ${usage}`);
+  if (positional.length !== count) throw new Error(`Usage: ${usage}`);
 }
 
 async function main() {
@@ -323,7 +340,9 @@ async function main() {
   const { positional, options } = parseArguments(process.argv.slice(3));
   const store = new FileStateStore(options["state-dir"] || defaultStateDir());
   const requestedSessionId = options["session-id"] ?? process.env.POWERBI_INTERACTIVE_SESSION_ID;
-  const taskId = options["task-id"] || process.env.POWERBI_EXECUTION_TASK_ID;
+  const explicitTaskId = typeof options["task-id"] === "string" ? options["task-id"].trim() : "";
+  const rawTaskId = explicitTaskId || process.env.POWERBI_EXECUTION_TASK_ID;
+  const taskId = typeof rawTaskId === "string" ? rawTaskId.trim() : rawTaskId;
   const executionMode = options["execution-mode"];
   const fallbackExecutionMode = process.env.POWERBI_EXECUTION_MODE;
   const authorize = (operation, target) => authorizeExecution(store, target, {
@@ -366,6 +385,82 @@ async function main() {
     return requestManualIntervention(store, target, command === "request-refresh" ? "refresh" : "save", {
       execution: authorization.execution,
     });
+  }
+  if (command === "prepare-pbir-edit") {
+    requirePositionals(positional, 1, "powerbi-desktop-safe prepare-pbir-edit <report.pbip> [--pid <pid>]");
+    const target = reportTarget(positional[0], [".pbip"]);
+    const authorization = authorize("prepare-pbir-edit", target);
+    if (!authorization.ok) return authorization;
+    const runtime = await loadRuntime(requestedSessionId);
+    return includeExecution(await preparePbirEdit(runtime, store, target, {
+      pid: options.pid,
+      newBatch: options["new-batch"] === true,
+      execution: authorization.execution,
+    }), authorization);
+  }
+  if (["complete-pbir-edit", "request-pbir-review", "resume-pbir-review", "complete-pbir-review"].includes(command)) {
+    requirePositionals(positional, 1, `powerbi-desktop-safe ${command} <checkpoint.json>`);
+    const inspected = inspectPbirEditCheckpoint(store, positional[0]);
+    if (!inspected.ok) return inspected;
+    const target = reportTarget(inspected.checkpoint.targetPath, [".pbip"]);
+    if (!explicitTaskId) {
+      return {
+        schemaVersion: 1,
+        ok: false,
+        operation: command,
+        status: "TASK_ID_REQUIRED",
+        target: { requestedPath: target, normalizedPath: target },
+        detail: "Pass the task ID that owns this PBIR edit checkpoint.",
+      };
+    }
+    if (explicitTaskId !== inspected.checkpoint.taskId) {
+      return {
+        schemaVersion: 1,
+        ok: false,
+        operation: command,
+        status: "TASK_ID_MISMATCH",
+        target: { requestedPath: target, normalizedPath: target },
+        detail: "The supplied task ID does not own this PBIR edit checkpoint.",
+      };
+    }
+    const authorization = authorizeExecution(store, target, {
+      operation: command,
+      taskId: explicitTaskId,
+      mode: executionMode,
+      fallbackMode: fallbackExecutionMode,
+    });
+    if (!authorization.ok) return authorization;
+    if (command === "complete-pbir-edit") {
+      return includeExecution(completePbirEditBatch(store, positional[0], {
+        validated: options.validated === true,
+        execution: authorization.execution,
+      }), authorization);
+    }
+    if (command === "request-pbir-review") {
+      return includeExecution(requestPbirReviewIntervention(
+        store,
+        positional[0],
+        options["notice-type"] || "unknown",
+        {
+          noticeConfirmed: options["notice-confirmed"] === true,
+          sessionChangesNeedSave: options["session-changes-need-save"] === true,
+          execution: authorization.execution,
+        },
+      ), authorization);
+    }
+    if (command === "complete-pbir-review") {
+      return includeExecution(completePbirReview(store, positional[0], {
+        tested: options.tested === true,
+        execution: authorization.execution,
+      }), authorization);
+    }
+    const runtime = await loadRuntime(requestedSessionId);
+    return includeExecution(await resumePbirReview(runtime, store, positional[0], {
+      completed: options.completed === true,
+      pid: options.pid,
+      retryTargetRead: options["retry-target-read"] === true,
+      execution: authorization.execution,
+    }), authorization);
   }
   if (command === "resume") {
     requirePositionals(positional, 1, "powerbi-desktop-safe resume <checkpoint.json>");
@@ -440,7 +535,7 @@ async function main() {
       maxPages,
     }), authorization);
   }
-  throw new Error("Commands: execution-mode, open, resolve, capabilities, capture-all, request-refresh, request-save, save-as, resume.");
+  throw new Error("Commands: execution-mode, open, resolve, capabilities, capture-all, prepare-pbir-edit, complete-pbir-edit, request-pbir-review, resume-pbir-review, complete-pbir-review, request-refresh, request-save, save-as, resume.");
 }
 
 try {
